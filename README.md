@@ -205,6 +205,13 @@ Then remove the `dstack` source line from your shell config.
 
 ---
 
+## Contributing
+Contributions are welcome!
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a PR.
+
+---
+
 ## License
 
 MIT License
