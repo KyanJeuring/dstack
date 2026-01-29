@@ -50,6 +50,12 @@ Supported **via WSL (Windows Subsystem for Linux)**:
 curl -fsSL https://kyanjeuring.com/scripts/install-dstack.sh | bash
 ```
 
+### Installing a specific version
+
+```bash
+curl https://kyanjeuring.com/scripts/install-dstack.sh | DSTACK_VERSION=vx.y.z bash
+```
+
 This will:
 - Install `dstack` into `~/.local/share/dstack`
 - Automatically source it in your shell (`.bashrc` / `.zshrc`)
