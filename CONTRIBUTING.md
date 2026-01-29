@@ -41,13 +41,7 @@ Please test:
 - Outside a project directory
 - With and without registered stacks
 
-### 5. Run ShellCheck (recommended)
-
-```bash
-shellcheck DStack.sh
-```
-
-### 6. Submit a Pull Request
+### 5. Submit a Pull Request
 
 Use the PR template and describe:
 
