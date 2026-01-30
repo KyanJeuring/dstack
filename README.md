@@ -84,7 +84,7 @@ source ~/.bashrc   # or ~/.zshrc
 # list stacks (auto-discovered + registered)
 dstack
 
-# start a stack from anywhere
+# compose and start a stack from anywhere
 dcompose myproject
 
 # follow logs without cd'ing
@@ -211,6 +211,8 @@ If you want full control over discovery paths, you can edit the script and adjus
 - `/opt/services`
 - `/your/custom/directory`
 
+After editing the discovery paths you should restart your shell or reload your config.
+
 This keeps dstack simple and dependency-free, while still allowing advanced users to tailor it to their environment.
 
 ---
@@ -275,11 +277,3 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a PR.
 MIT License
 
 ---
-
-## Why dstack?
-
-Docker Compose is great.
-
-Having to `cd` into the right directory **every single time** is not.
-
-That's where `DStack` comes in. It allows you to manage stacks no matter in what directory you are in.
