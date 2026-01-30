@@ -118,6 +118,71 @@ _dcompose() {
 }
 
 # ==================================================
+# DStack command listing
+# ==================================================
+
+dhelp() {
+  info "DStack commands"
+  log
+
+  local DSTACK_ROOT
+  DSTACK_ROOT="$(
+    cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P
+  )"
+
+  shopt -s nullglob
+  local files=(
+    "$DSTACK_ROOT"/dstack.sh
+    "$DSTACK_ROOT"/commands/*.sh
+  )
+  shopt -u nullglob
+
+  ((${#files[@]})) || {
+    warn "No DStack command files found"
+    return
+  }
+
+  awk '
+    /^# [=]{5,}$/ {
+      sep++
+      in_section = 0
+      next
+    }
+    sep == 1 && /^# / {
+      section = substr($0, 3)
+      sep = 0
+      in_section = 1
+      next
+    }
+    {
+      sep = 0
+    }
+    /^## / && in_section {
+      desc = substr($0, 4)
+      getline
+
+      if ($0 ~ /^[a-zA-Z_][a-zA-Z0-9_]*\(\)/) {
+        name = $0
+        sub(/\(\).*/, "", name)
+        if (name ~ /^_/) next
+        printf "[%s]\n%-22s %s\n", section, name, desc
+      }
+    }
+  ' "${files[@]}" |
+  awk '
+    /^\[/ {
+      if ($0 != last) {
+        if (NR > 1) print ""
+        print $0
+        last = $0
+      }
+      next
+    }
+    { print "  " $0 }
+  '
+}
+
+# ==================================================
 # Docker lists & info
 # ==================================================
 

@@ -98,6 +98,7 @@ No `cd`. No guessing where the project lives.
 
 | Command | Description |
 |------|------------|
+| `dhelp` | List available commands |
 | `dstack` | List available stacks |
 | `dstack add <name> <path>` | Register a stack |
 | `dstackunset <name>` | Unregister a stack |
