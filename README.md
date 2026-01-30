@@ -215,6 +215,44 @@ This keeps dstack simple and dependency-free, while still allowing advanced user
 
 ---
 
+## Updating
+
+### Update to the latest version
+
+To update DStack, simply re-run the installer:
+
+```bash
+curl -fsSL https://kyanjeuring.com/scripts/install-dstack.sh | bash
+```
+
+This will:
+
+- Fetch the latest release
+- Replace the existing installation in ~/.local/share/dstack
+- Keep your shell configuration intact
+
+Restart your shell or reload your config if needed:
+
+```bash
+source ~/.bashrc   # or ~/.zshrc
+```
+
+### Update to a specific version
+
+If you want to pin or roll back to a specific version:
+
+```bash
+curl https://kyanjeuring.com/scripts/install-dstack.sh | DSTACK_VERSION=vx.y.z bash
+```
+
+This is useful if:
+- You want a known, stable version
+- You’re debugging a regression
+
+You manage multiple machines and want consistency
+
+---
+
 ## Uninstall
 
 ```bash
