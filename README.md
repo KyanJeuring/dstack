@@ -6,14 +6,26 @@
 
 No more constantly changing directories just to run `docker compose up` or `down`.
 
-Think of it as **Docker Desktop for the terminal**.
+Think of it as Docker Desktop-style convenience for Docker Compose, without a GUI.
+
+---
+
+## Who is this for?
+
+DStack is for developers and operators who:
+
+- Run multiple Docker Compose projects
+- Work on servers, over SSH, or in homelabs
+- Forget where compose files live
+- Are tired of `cd` + `docker compose` loops
+- Prefer small, inspectable shell tools over GUIs
 
 ---
 
 ## Features
 
 - Run Docker Compose commands from **any directory**
-- Named stacks (`dcompose api`, `ddown website`, etc.)
+- Named stacks (`dcompose myproject`, `ddown website`, etc.)
 - Auto‑discovery of projects in common directories
 - Register Compose projects from **any path**
 - Optional active stack context (`dstack <name>`)
@@ -66,6 +78,19 @@ Restart your shell or run:
 source ~/.bashrc   # or ~/.zshrc
 ```
 
+## 15-second demo
+
+```bash
+# list stacks (auto-discovered + registered)
+dstack
+
+# start a stack from anywhere
+dcompose myproject
+
+# follow logs without cd'ing
+dlogs myproject
+```
+
 ---
 
 ## Quick start
@@ -85,7 +110,7 @@ This shows:
 ### Run commands without changing directory
 
 ```bash
-dcompose api
+dcompose myproject
 ddown website
 dlogs backend
 ```
@@ -168,8 +193,8 @@ This is especially useful for:
 
 When you run a command, `dstack` resolves the Compose context in this order:
 
-1. Explicit stack name (`dcompose api`)
-2. Active stack (`dstack api`)
+1. Explicit stack name (`dcompose myproject`)
+2. Active stack (`dstack myproject`)
 3. Local `docker-compose.yml`
 
 If no context is found, `dstack` tells you exactly what to do.
