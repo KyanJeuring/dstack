@@ -215,6 +215,29 @@ dpsg() {
   docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}" | grep -i "$1"
 }
 
+## List docker compose services
+dsvc() {
+   _dcompose "$@" ps --services
+}
+
+## Show container port mappings
+dport() {
+  docker ps --format "table {{.Names}}\t{{.Ports}}"
+}
+
+## Show IP address of a container
+dip() {
+  if [ -z "$1" ]; then
+    err "Usage: dip <container-name>"
+    return 1
+  fi
+  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1"
+}
+
+# ==================================================
+# Docker compose stack management
+# ==================================================
+
 ## Show available docker compose stacks or register a new docker compose stack
 dstack() {
   local cmd="$1"
@@ -311,29 +334,6 @@ dstackunset() {
 
   ok "Unregistered docker stack '$name'"
 }
-
-## List docker compose services
-dsvc() {
-   _dcompose "$@" ps --services
-}
-
-## Show container port mappings
-dport() {
-  docker ps --format "table {{.Names}}\t{{.Ports}}"
-}
-
-## Show IP address of a container
-dip() {
-  if [ -z "$1" ]; then
-    err "Usage: dip <container-name>"
-    return 1
-  fi
-  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1"
-}
-
-# ==================================================
-# Docker compose stack management
-# ==================================================
 
 ## Start docker compose services
 dstart() {
