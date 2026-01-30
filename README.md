@@ -2,7 +2,7 @@
 
 **Docker Compose stack management**
 
-`DStack` is a small, zero‑dependency Bash tool that lets you manage **multiple Docker Compose projects from anywhere**.
+`DStack` is a small, zero‑dependency Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
 No more constantly changing directories just to run `docker compose up` or `down`.
 
@@ -94,24 +94,28 @@ No `cd`. No guessing where the project lives.
 
 ---
 
-### Set an active stack (optional)
+## Included commands (highlights)
 
+| Command | Description |
+|------|------------|
+| `dhelp` | List available commands |
+| `dstack` | List available stacks |
+| `dstack add <name> <path>` | Register a stack |
+| `dstackunset <name>` | Unregister a stack |
+| `dcompose [stack]` | Build & start stack |
+| `ddown [stack]` | Stop & remove stack |
+| `dlogs [stack]` | Follow logs |
+| `dexec [stack] <service>` | Exec into container |
+
+(Plus many more helpers for logs, rebuilds, cleanup, networking.)
+
+All commands can also be run within a project without specifying the current stack name.
+
+Example:
 ```bash
-dstack api
-```
-
-Now you can run:
-
-```bash
+cd /path/to/project
 dcompose
 dlogs
-ddown
-```
-
-To clear the active stack:
-
-```bash
-dstackunset api
 ```
 
 ---
@@ -135,8 +139,15 @@ These locations were chosen because they are widely used across Linux, macOS, an
 
 You can register **any directory** containing a `docker-compose.yml`:
 
+Outside a project
 ```bash
 dstack add myproject /path/to/project
+```
+
+Inside a project:
+```bash
+cd /path/to/project
+dstack add myproject .
 ```
 
 After that:
@@ -162,22 +173,6 @@ When you run a command, `dstack` resolves the Compose context in this order:
 3. Local `docker-compose.yml`
 
 If no context is found, `dstack` tells you exactly what to do.
-
----
-
-## Included commands (highlights)
-
-| Command | Description |
-|------|------------|
-| `dstack` | List available stacks |
-| `dstack add <name> <path>` | Register a stack |
-| `dstackunset <name>` | Unregister a stack |
-| `dcompose [stack]` | Build & start stack |
-| `ddown [stack]` | Stop & remove stack |
-| `dlogs [stack]` | Follow logs |
-| `dexec [stack] <service>` | Exec into container |
-
-(Plus many more helpers for logs, rebuilds, cleanup, networking.)
 
 ---
 
