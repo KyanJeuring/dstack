@@ -121,14 +121,13 @@ _dcompose() {
 # DStack command listing
 # ==================================================
 
+## Show DStack commands
 dhelp() {
   info "DStack commands"
   log
 
   local DSTACK_ROOT
-  DSTACK_ROOT="$(
-    cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P
-  )"
+  DSTACK_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
   shopt -s nullglob
   local files=(
@@ -138,25 +137,31 @@ dhelp() {
   shopt -u nullglob
 
   ((${#files[@]})) || {
-    warn "No DStack command files found"
+    warn "No dstack command files found"
     return
   }
 
   awk '
+    # Detect separator lines
     /^# [=]{5,}$/ {
-      sep++
-      in_section = 0
+      prev_sep = 1
       next
     }
-    sep == 1 && /^# / {
+
+    # Section title must be BETWEEN separators
+    prev_sep && /^# / {
       section = substr($0, 3)
-      sep = 0
+      prev_sep = 0
       in_section = 1
       next
     }
+
+    # Anything else cancels separator expectation
     {
-      sep = 0
+      prev_sep = 0
     }
+
+    # Documented public commands
     /^## / && in_section {
       desc = substr($0, 4)
       getline
@@ -164,7 +169,10 @@ dhelp() {
       if ($0 ~ /^[a-zA-Z_][a-zA-Z0-9_]*\(\)/) {
         name = $0
         sub(/\(\).*/, "", name)
+
+        # Ignore internal helpers
         if (name ~ /^_/) next
+
         printf "[%s]\n%-22s %s\n", section, name, desc
       }
     }
