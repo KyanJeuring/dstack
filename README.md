@@ -170,6 +170,9 @@ By default, DStack scans:
 - `~/src`
 - `~/code`
 - `/opt/services`
+- `C:/Users/<you>/projects (Windows / Git Bash)`
+- `C:/Users/<you>/src`
+- `C:/Users/<you>/code`
 
 Any direct subdirectory that contains a docker-compose.yml file is treated as a stack
 
@@ -219,13 +222,8 @@ If no context is found, `dstack` tells you exactly what to do.
 ## Customizing discovery locations (advanced)
 
 By default, DStack auto-discovers Docker Compose projects in a small set of common directories, such as:
-- ~/projects
-- ~/src
-- ~/code
-- /opt/services
-- C:/Users/<you>/projects (Windows / Git Bash)
-- C:/Users/<you>/src
-- C:/Users/<you>/code
+- `~/projects`
+- `C:/Users/<you>/projects (Windows / Git Bash)`
 
 ### Override discovery paths (recommended)
 
