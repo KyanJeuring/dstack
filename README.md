@@ -236,7 +236,7 @@ Example:
 
 Add this to your shell config (.bashrc, .zshrc, etc.) to make it permanent and reload the shell:
 ```bash
-export DSTACK_BASES="/your/custom/paths"
+export DSTACK_BASES="/your/custom/path1 /your/custom/path2"
 ```
 
 DStack will then use only these paths for auto-discovery.
