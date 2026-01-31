@@ -34,15 +34,28 @@ confirm() {
 # Docker helpers (internal)
 # ==================================================
 
+_dstack_bases() {
+  local user
+  user="${USER:-$(whoami)}"
+
+  if [[ -n "${DSTACK_BASES:-}" ]]; then
+    echo "$DSTACK_BASES"
+    return
+  fi
+
+  echo \
+    "$HOME/projects" \
+    "$HOME/src" \
+    "$HOME/code" \
+    "/opt/services" \
+    "C:/Users/$user/projects" \
+    "C:/Users/$user/src" \
+    "C:/Users/$user/code"
+}
+
 _dstack_resolve() {
   local STACK="$1"
   local REGISTRY="$HOME/.config/dstack/registry"
-  local BASES=(
-    "$HOME/projects" # common projects location
-    "$HOME/src" # common source code location
-    "$HOME/code" # common development location
-    "/opt/services" # common location for services
-  )
 
   if [[ -f "$REGISTRY" ]]; then
     local path
@@ -53,7 +66,7 @@ _dstack_resolve() {
     fi
   fi
 
-  for base in "${BASES[@]}"; do
+  for base in $(_dstack_bases); do
     [[ -d "$base/$STACK" ]] || continue
     [[ -f "$base/$STACK/docker-compose.yml" ]] || continue
     echo "$base/$STACK"
@@ -257,7 +270,7 @@ dstack() {
     fi
 
     info "Auto-discovered stacks:"
-    for base in "$HOME/projects" "$HOME/src" "$HOME/code" /opt/services; do
+    for base in $(_dstack_bases); do
       [[ -d "$base" ]] || continue
 
       find "$base" -maxdepth 1 -mindepth 1 -type d 2>/dev/null |
