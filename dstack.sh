@@ -4,6 +4,7 @@
 # Logging and confirmation helpers (internal)
 # ==================================================
 
+### Basic logging function (internal)
 log() {
   printf '%b\n' "${1:-}"
 }
@@ -20,11 +21,13 @@ else
   ERR="[ERROR]"
 fi
 
+### Logging shortcuts (internal)
 info() { log "$INFO $*"; }
 ok()   { log "$OK $*"; }
 warn() { log "$WARN $*"; }
 err()  { log "$ERR $*"; }
 
+### Confirmation prompt (internal)
 confirm() {
   read -rp "$1 [y/N]: " ans
   [[ "$ans" =~ ^[Yy]$ ]]
@@ -34,6 +37,20 @@ confirm() {
 # Docker helpers (internal)
 # ==================================================
 
+### List of deprecated functions
+DEPRECATED_FUNCTIONS=(
+
+)
+
+### Remove deprecated functions automatically
+for fn in "${DEPRECATED_FUNCTIONS[@]}"; do
+  if declare -F "$fn" >/dev/null; then
+    warn "'$fn' is deprecated and has been removed"
+    unset -f "$fn"
+  fi
+done
+
+### Resolve docker compose stack path (internal)
 _dstack_bases() {
   local user
   user="${USER:-$(whoami)}"
@@ -53,6 +70,7 @@ _dstack_bases() {
     "C:/Users/$user/code"
 }
 
+### Resolve docker compose stack path by name (internal)
 _dstack_resolve() {
   local STACK="$1"
   local REGISTRY="$HOME/.config/dstack/registry"
@@ -76,6 +94,7 @@ _dstack_resolve() {
   return 1
 }
 
+### Check if argument is a docker compose verb (internal)
 _is_compose_verb() {
   case "$1" in
     up|down|start|stop|restart|logs|ps|pull|build|config|exec|run)
@@ -87,6 +106,7 @@ _is_compose_verb() {
   esac
 }
 
+### Docker compose command wrapper (internal)
 _dcompose() {
   local dir
   local first_arg="$1"
