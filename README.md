@@ -46,11 +46,26 @@ Fully supported:
 - Supports Bash and Zsh
 
 ### Windows
-Supported **via WSL (Windows Subsystem for Linux)**:
-- Works in WSL2 with Docker Desktop
-- Native Windows shells (PowerShell / CMD) are **not supported**
 
-> Recommended setup on Windows: **WSL2 + Docker Desktop**
+Supported via WSL2 and Git Bash:
+
+#### WSL2 Fully supported
+
+Works with Docker Desktop <br>
+Recommended for the best experience
+
+#### Git Bash (native Windows)
+
+Supported and tested <br>
+Requires Docker Desktop
+
+Uses Windows-style paths (C:/...)
+
+Recommended setup on Windows:<br>
+WSL2 + Docker Desktop<br>
+Git Bash support is provided for users who prefer a native Windows shell.
+
+PowerShell and CMD are not supported
 
 ---
 
@@ -203,17 +218,41 @@ If no context is found, `dstack` tells you exactly what to do.
 
 ## Customizing discovery locations (advanced)
 
-If you want full control over discovery paths, you can edit the script and adjust the discovery locations section:
+By default, DStack auto-discovers Docker Compose projects in a small set of common directories, such as:
+- ~/projects
+- ~/src
+- ~/code
+- /opt/services
+- C:/Users/<you>/projects (Windows / Git Bash)
+- C:/Users/<you>/src
+- C:/Users/<you>/code
 
-- `~/projects`
-- `~/src`
-- `~/code`
-- `/opt/services`
-- `/your/custom/directory`
+### Override discovery paths (recommended)
 
-After editing the discovery paths you should restart your shell or reload your config.
+Advanced users can override the discovery locations without editing the script by setting the DSTACK_BASES environment variable.
 
-This keeps dstack simple and dependency-free, while still allowing advanced users to tailor it to their environment.
+Example:
+
+
+Add this to your shell config (.bashrc, .zshrc, etc.) to make it permanent and reload the shell:
+```bash
+export DSTACK_BASES="/your/custom/paths"
+```
+
+DStack will then use only these paths for auto-discovery.
+
+### Editing the script (not recommended)
+
+You can edit the discovery paths directly in the script, but this is discouraged, as it makes updating DStack harder and can lead to merge conflicts.
+
+If you do edit the script, restart your shell or reload your configuration afterward.
+
+This approach keeps DStack simple and dependency-free, while still giving power users full control over their environment.
+
+### Important note:
+```
+Custom discovery paths must not contain spaces.
+```
 
 ---
 
