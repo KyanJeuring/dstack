@@ -16,6 +16,5 @@ template: |
 
   <!-- Explain impact and intent -->
 
-  ### Important note
-
-  <!-- Include any important notes for users -->
+  > [!IMPORTANT]
+  > Be sure to update any relevant documentation.
