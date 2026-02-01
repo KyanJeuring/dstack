@@ -1,0 +1,21 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+
+template: |
+  ## What's Changed
+
+  <!-- Summarize user-facing changes -->
+
+  ## Details
+
+  ### Main changes
+
+  <!-- Explain the main change(s) -->
+
+  ### Why this matters
+
+  <!-- Explain impact and intent -->
+
+  ### Important note
+
+  <!-- Include any important notes for users -->
