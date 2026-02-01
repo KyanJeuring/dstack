@@ -35,37 +35,25 @@ DStack is for developers and operators who:
 
 ---
 
-## Platform support
+## Platform availability
 
 ### Linux
-Fully supported and tested.
 
-### macOS
-Fully supported:
-- Works with Docker Desktop for Mac
-- Supports Bash and Zsh
+DStack is fully supported on Linux distributions.
 
 ### Windows
 
-Supported via WSL2 and Git Bash:
+DStack is available on Windows via **WSL** or **Git Bash**.
 
-#### WSL2 Fully supported
+> [!WARNING]
+> PowerShell and CMD are not supported.
 
-Works with Docker Desktop <br>
-Recommended for the best experience
+### macOS
 
-#### Git Bash (native Windows)
+DStack is available on macOS.
 
-Supported and tested <br>
-Requires Docker Desktop
-
-Uses Windows-style paths (C:/...)
-
-Recommended setup on Windows:<br>
-WSL2 + Docker Desktop<br>
-Git Bash support is provided for users who prefer a native Windows shell.
-
-PowerShell and CMD are not supported
+> [!TIP]
+> While DStack is primarily designed for the `bash` shell, it also works with other shells such as `zsh` and `fish`.
 
 ---
 
@@ -225,10 +213,8 @@ These locations were chosen because they are widely used across Linux, macOS, an
 
 Discovery is intentionally limited to one level of nesting to keep behavior fast and predictable.
 
-### Important note:
-```
-When stacks are nested, DStack displays their relative path to avoid name collisions.
-```
+> [!IMPORTANT]
+> When stacks are nested, DStack displays their relative path to avoid name collisions.
 
 ## Register external Compose projects
 
@@ -301,11 +287,9 @@ export DSTACK_COMPOSE_FILES="docker-compose.yml compose.yml"
 
 This allows full control over which Compose files DStack considers during stack resolution.
 
-### Important note:
-```
-This is an advanced feature.
-Overriding Compose filenames can make stack discovery less predictable and is not recommended for most users.
-```
+> [!IMPORTANT]
+> This is an advanced feature.
+> Overriding Compose filenames can make stack discovery less predictable and is not recommended for most users.
 
 ---
 
@@ -337,10 +321,8 @@ If you do edit the script, restart your shell or reload your configuration after
 
 This approach keeps DStack simple and dependency-free, while still giving power users full control over their environment.
 
-### Important note:
-```
-Custom discovery paths must not contain spaces.
-```
+> [!IMPORTANT]
+> Custom discovery paths must not contain spaces.
 
 ---
 
