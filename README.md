@@ -1,4 +1,4 @@
-# DStack
+  <img src="./logo/dstack-logo.png">
 
 **Docker Compose stack management**
 
