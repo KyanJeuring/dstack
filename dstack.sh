@@ -416,14 +416,16 @@ dstop() {
   _dcompose "$@" stop
 }
 
-## Build and start docker stack
+## Run Docker Compose commands
 dcompose() {
   if [[ $# -eq 0 ]]; then
+    info "No arguments given, running: up -d --build --remove-orphans"
     _dcompose up -d --build --remove-orphans
     return
   fi
 
   if [[ $# -eq 1 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
+    info "No subcommand given, running: up -d --build --remove-orphans"
     _dcompose "$1" up -d --build --remove-orphans
     return
   fi
