@@ -74,13 +74,13 @@ PowerShell and CMD are not supported
 ### One‑line install (recommended)
 
 ```bash
-curl -fsSL https://kyanjeuring.com/scripts/install-dstack.sh | bash
+curl https://kyanjeuring.com/scripts/install-dstack | bash
 ```
 
 ### Installing a specific version
 
 ```bash
-curl https://kyanjeuring.com/scripts/install-dstack.sh | DSTACK_VERSION=vx.y.z bash
+curl https://kyanjeuring.com/scripts/install-dstack | DSTACK_VERSION=vx.y.z bash
 ```
 
 This will:
@@ -351,7 +351,7 @@ Custom discovery paths must not contain spaces.
 To update DStack, simply re-run the installer:
 
 ```bash
-curl -fsSL https://kyanjeuring.com/scripts/install-dstack.sh | bash
+curl https://kyanjeuring.com/scripts/install-dstack | bash
 ```
 
 This will:
@@ -371,7 +371,7 @@ source ~/.bashrc   # or ~/.zshrc
 If you want to pin or roll back to a specific version:
 
 ```bash
-curl https://kyanjeuring.com/scripts/install-dstack.sh | DSTACK_VERSION=vx.y.z bash
+curl https://kyanjeuring.com/scripts/install-dstack | DSTACK_VERSION=vx.y.z bash
 ```
 
 This is useful if:
