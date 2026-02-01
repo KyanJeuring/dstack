@@ -440,8 +440,15 @@ dcompose() {
   _dcompose "$@"
 }
 
-## Stop and remove containers + volumes
+## Stop and remove containers (preserve volumes)
 ddown() {
+  _dcompose "$@" down
+}
+
+## Stop and remove containers + volumes (destructive)
+ddownv() {
+  warn "This will remove containers + volumes"
+  confirm "Continue?" || return 1
   _dcompose "$@" down -v
 }
 
