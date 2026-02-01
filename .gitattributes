@@ -1,0 +1,2 @@
+# Normalize text files to avoid OS-specific diffs
+* text=auto eol=lf
