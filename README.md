@@ -174,13 +174,20 @@ By default, DStack scans:
 - `C:/Users/<you>/src`
 - `C:/Users/<you>/code`
 
-Any direct subdirectory that contains a docker-compose.yml file is treated as a stack
+Any direct subdirectory that contains a supported Docker Compose file is treated as a stack.
+
+Supported filenames:
+
+- `docker-compose.yml`
+- `docker-compose.yaml`
+- `compose.yml`
+- `compose.yaml`
 
 These locations were chosen because they are widely used across Linux, macOS, and WSL environments
 
 ## Register external Compose projects
 
-You can register **any directory** containing a `docker-compose.yml`:
+You can register any directory containing a supported Docker Compose file:
 
 Outside a project
 ```bash
@@ -207,15 +214,53 @@ This is especially useful for:
 
 ---
 
-## How stack resolution works?
+## How stack resolution works
 
 When you run a command, `dstack` resolves the Compose context in this order:
 
 1. Explicit stack name (`dcompose myproject`)
 2. Active stack (`dstack myproject`)
-3. Local `docker-compose.yml`
+3. Local Docker Compose file in the current directory
+
+DStack will use the first supported Compose file it finds, in a deterministic order.
 
 If no context is found, `dstack` tells you exactly what to do.
+
+---
+
+## Docker Compose file support
+
+DStack supports the standard Docker Compose filenames:
+
+- `docker-compose.yml`
+- `docker-compose.yaml`
+- `compose.yml`
+- `compose.yaml`
+
+When multiple files are present, DStack selects the first matching file in a fixed order to ensure predictable behavior.
+
+DStack does not automatically combine multiple Compose files.
+If you rely on overrides (for example `docker-compose.override.yml`), manage those explicitly via Docker Compose itself.
+
+### Customizing Compose filenames (advanced)
+
+By default, DStack looks for the standard Docker Compose filenames mentioned above.
+
+Advanced users can override this behavior by setting the `DSTACK_COMPOSE_FILES` environment variable.
+
+Example:
+
+```bash
+export DSTACK_COMPOSE_FILES="docker-compose.yml compose.yml"
+```
+
+This allows full control over which Compose files DStack considers during stack resolution.
+
+### Important note:
+```
+This is an advanced feature.
+Overriding Compose filenames can make stack discovery less predictable and is not recommended for most users.
+```
 
 ---
 
@@ -227,7 +272,7 @@ By default, DStack auto-discovers Docker Compose projects in a small set of comm
 
 ### Override discovery paths (recommended)
 
-Advanced users can override the discovery locations without editing the script by setting the DSTACK_BASES environment variable.
+Advanced users can override the discovery locations without editing the script by setting the `DSTACK_BASES` environment variable.
 
 Example:
 

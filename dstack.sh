@@ -50,6 +50,35 @@ for fn in "${DEPRECATED_FUNCTIONS[@]}"; do
   fi
 done
 
+### List of supported docker compose files (internal)
+_dstack_compose_files() {
+  if [[ -n "${DSTACK_COMPOSE_FILES:-}" ]]; then
+    echo "$DSTACK_COMPOSE_FILES"
+    return
+  fi
+
+  echo \
+    "$dir/docker-compose.yml" \
+    "$dir/docker-compose.yaml" \
+    "$dir/compose.yml" \
+    "$dir/compose.yaml"
+}
+
+### Find docker compose file in directory (internal)
+_dstack_find_compose_file() {
+  local dir="$1"
+  local file
+
+  for file in $(_dstack_compose_files); do
+    [[ -f "$file" ]] && {
+      echo "$file"
+      return 0
+    }
+  done
+
+  return 1
+}
+
 ### Resolve docker compose stack path (internal)
 _dstack_bases() {
   local user
@@ -74,20 +103,21 @@ _dstack_bases() {
 _dstack_resolve() {
   local STACK="$1"
   local REGISTRY="$HOME/.config/dstack/registry"
+  local path
 
   if [[ -f "$REGISTRY" ]]; then
-    local path
     path="$(awk -F= -v s="$STACK" '$1 == s {print $2}' "$REGISTRY")"
-    if [[ -n "$path" && -f "$path/docker-compose.yml" ]]; then
+    if [[ -n "$path" ]] && _dstack_find_compose_file "$path" >/dev/null; then
       echo "$path"
       return 0
     fi
   fi
 
   for base in $(_dstack_bases); do
-    [[ -d "$base/$STACK" ]] || continue
-    [[ -f "$base/$STACK/docker-compose.yml" ]] || continue
-    echo "$base/$STACK"
+    path="$base/$STACK"
+    [[ -d "$path" ]] || continue
+    _dstack_find_compose_file "$path" >/dev/null || continue
+    echo "$path"
     return 0
   done
 
@@ -109,19 +139,24 @@ _is_compose_verb() {
 ### Docker compose command wrapper (internal)
 _dcompose() {
   local dir
+  local compose
   local first_arg="$1"
 
   if [[ $# -gt 0 ]]; then
     if dir="$(_dstack_resolve "$first_arg")"; then
       shift
-      docker compose -f "$dir/docker-compose.yml" "$@"
+      compose="$(_dstack_find_compose_file "$dir")" || {
+        err "No Docker Compose file found in $dir"
+        return 1
+      }
+      docker compose -f "$compose" "$@"
       return
     fi
   fi
 
   if [[ -n "${DSTACK:-}" ]]; then
-    if [[ -f "$DSTACK/docker-compose.yml" ]]; then
-      docker compose -f "$DSTACK/docker-compose.yml" "$@"
+    if compose="$(_dstack_find_compose_file "$DSTACK")"; then
+      docker compose -f "$compose" "$@"
       return
     else
       warn "DSTACK invalid, clearing"
@@ -129,8 +164,8 @@ _dcompose() {
     fi
   fi
 
-  if [[ -f docker-compose.yml ]]; then
-    docker compose "$@"
+  if compose="$(_dstack_find_compose_file "$(pwd)")"; then
+    docker compose -f "$compose" "$@"
     return
   fi
 
@@ -277,6 +312,7 @@ dstack() {
   local name="$2"
   local path="$3"
   local REGISTRY="$HOME/.config/dstack/registry"
+  local compose
 
   mkdir -p "$(dirname "$REGISTRY")"
   touch "$REGISTRY"
@@ -295,7 +331,7 @@ dstack() {
 
       find "$base" -maxdepth 1 -mindepth 1 -type d 2>/dev/null |
       while read -r dir; do
-        [[ -f "$dir/docker-compose.yml" ]] || continue
+        _dstack_find_compose_file "$dir" >/dev/null || continue
         printf "  %-20s %s\n" "$(basename "$dir")" "$dir"
       done
     done
@@ -310,8 +346,8 @@ dstack() {
 
     path="$(realpath -m "$path")"
 
-    [[ -f "$path/docker-compose.yml" ]] || {
-      err "No docker-compose.yml in $path"
+    _dstack_find_compose_file "$path" >/dev/null || {
+      err "No Docker Compose file found in $path"
       return 1
     }
 
