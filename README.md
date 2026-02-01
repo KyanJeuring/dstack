@@ -134,6 +134,43 @@ No `cd`. No guessing where the project lives.
 
 ---
 
+## The `dcompose` command
+
+`dcompose` is a thin wrapper around Docker Compose that automatically resolves the correct Compose context.
+
+It behaves like `docker compose`, but lets you run commands from anywhere by resolving:
+
+1. An explicit stack name
+2. The active stack (`dstack <name>`)
+3. The current directory
+
+### Default behavior
+
+When no arguments are provided, `dcompose` runs:
+
+```bash
+docker compose [stack] up -d --build --remove-orphans
+```
+
+This provides a fast, consistent "bring everything up" experience.
+
+Full Docker Compose access
+Any arguments passed to `dcompose` are forwarded directly to Docker Compose.
+
+Examples:
+
+```bash
+dcompose up -d
+dcompose mystack restart
+dcompose down -v
+```
+
+This allows advanced workflows without limiting Docker Compose functionality.
+
+DStack also provides a set of convenience commands (`ddown`, `dlogs`, `dexec`, etc.) that wrap common Docker Compose operations with safer defaults and clearer intent.
+
+---
+
 ## Included commands (highlights)
 
 | Command | Description |
@@ -143,7 +180,7 @@ No `cd`. No guessing where the project lives.
 | `dstack add <name> <path>` | Register a stack |
 | `dstackunset <name>` | Unregister a stack |
 | `dcompose [stack]` | Build & start stack |
-| `ddown [stack]` | Stop & remove stack |
+| `ddown [stack]` | Stop & remove containers |
 | `dlogs [stack]` | Follow logs |
 | `dexec [stack] <service>` | Exec into container |
 
