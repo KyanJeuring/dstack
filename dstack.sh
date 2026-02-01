@@ -313,6 +313,7 @@ dstack() {
   local path="$3"
   local REGISTRY="$HOME/.config/dstack/registry"
   local compose
+  local MAX_DEPTH=2
 
   mkdir -p "$(dirname "$REGISTRY")"
   touch "$REGISTRY"
@@ -329,10 +330,10 @@ dstack() {
     for base in $(_dstack_bases); do
       [[ -d "$base" ]] || continue
 
-      find "$base" -maxdepth 1 -mindepth 1 -type d 2>/dev/null |
+      find "$base" -maxdepth "$MAX_DEPTH" -mindepth 1 -type d 2>/dev/null |
       while read -r dir; do
         _dstack_find_compose_file "$dir" >/dev/null || continue
-        printf "  %-20s %s\n" "$(basename "$dir")" "$dir"
+        printf "  %-20s %s\n" "${dir#$base/}" "$dir"
       done
     done
     return 0

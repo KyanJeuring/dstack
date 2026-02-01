@@ -174,7 +174,8 @@ By default, DStack scans:
 - `C:/Users/<you>/src`
 - `C:/Users/<you>/code`
 
-Any direct subdirectory that contains a supported Docker Compose file is treated as a stack.
+Any directory up to one level deep that contains a supported Docker Compose file is treated as a stack
+(for example `media/jellyfin/`).
 
 Supported filenames:
 
@@ -184,6 +185,13 @@ Supported filenames:
 - `compose.yaml`
 
 These locations were chosen because they are widely used across Linux, macOS, and WSL environments
+
+Discovery is intentionally limited to one level of nesting to keep behavior fast and predictable.
+
+### Important note:
+```
+When stacks are nested, DStack displays their relative path to avoid name collisions.
+```
 
 ## Register external Compose projects
 
