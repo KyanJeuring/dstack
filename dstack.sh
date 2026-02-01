@@ -52,6 +52,8 @@ done
 
 ### List of supported docker compose files (internal)
 _dstack_compose_files() {
+  local dir="$1"
+
   if [[ -n "${DSTACK_COMPOSE_FILES:-}" ]]; then
     echo "$DSTACK_COMPOSE_FILES"
     return
@@ -69,7 +71,7 @@ _dstack_find_compose_file() {
   local dir="$1"
   local file
 
-  for file in $(_dstack_compose_files); do
+  for file in $(_dstack_compose_files "$dir"); do
     [[ -f "$file" ]] && {
       echo "$file"
       return 0
@@ -312,7 +314,6 @@ dstack() {
   local name="$2"
   local path="$3"
   local REGISTRY="$HOME/.config/dstack/registry"
-  local compose
   local MAX_DEPTH=2
 
   mkdir -p "$(dirname "$REGISTRY")"
@@ -427,6 +428,15 @@ dcompose() {
     return
   fi
 
+  if [[ $# -gt 1 ]]; then
+    local first_arg="$1"
+    if _dstack_resolve "$first_arg" >/dev/null 2>&1; then
+      shift
+      _dcompose "$first_arg" "$@"
+      return
+    fi
+  fi
+
   _dcompose "$@"
 }
 
@@ -442,6 +452,11 @@ dstopall() {
 
 ## Recreate docker stack with volume removal
 drecompose() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: drecompose [stack]"
+    return 1
+  fi
+
   info "Recreating docker stack with volume removal"
   _dcompose "$@" down -v || return 1
   _dcompose "$@" up -d
@@ -450,6 +465,11 @@ drecompose() {
 
 ## Restart docker stack with status messages
 drebootstack() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: drebootstack [stack]"
+    return 1
+  fi
+
   info "Restarting docker stack"
   _dcompose "$@" down || return 1
   _dcompose "$@" up -d || return 1
@@ -458,6 +478,11 @@ drebootstack() {
 
 ## Remove the current docker compose stack and prune unused Docker resources system-wide
 dstackpurge() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dstackpurge [stack]"
+    return 1
+  fi
+
   warn "This will remove the CURRENT compose stack and prune UNUSED Docker resources system-wide"
   warn "Images and volumes still in use will NOT be removed"
   confirm "Continue?" || return 1
@@ -640,18 +665,28 @@ dprunewhat() {
 
 ## Pull latest images
 dpull() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dpull [stack]"
+    return 1
+  fi
+
    _dcompose "$@" pull
 }
 
 ## Pull images and recreate containers
 dupdate() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dupdate [stack]"
+    return 1
+  fi
+
   _dcompose "$@" pull && _dcompose "$@" up -d
 }
 
 ## Rebuild and restart a single service
 drebuild() {
   if [ -z "$1" ]; then
-    echo "Usage: drebuild <service-name>"
+    echo "Usage: drebuild [stack] <service-name>"
     return 1
   fi
   _dcompose "$@" build "$1" && _dcompose "$@" up -d "$1"
@@ -659,6 +694,11 @@ drebuild() {
 
 ## Rebuild all services without using cache
 drebuildnocache() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: drebuildnocache [stack]"
+    return 1
+  fi
+
   _dcompose "$@" build --no-cache && _dcompose "$@" up -d
 }
 
@@ -674,7 +714,7 @@ dnet() {
 ## Inspect a docker network
 dnetinspect() {
   if [ -z "$1" ]; then
-    err "Usage: dnetinspect <network-name>"
+    err "Usage: dnetinspect [stack] <network-name>"
     return 1
   fi
   docker network inspect "$1"
@@ -686,5 +726,10 @@ dnetinspect() {
 
 ## Show resolved docker compose config
 dconfig() {
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dconfig [stack]"
+    return 1
+  fi
+
   _dcompose "$@" config
 }
