@@ -381,6 +381,12 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a PR.
 
 ---
 
+## Support
+
+If you found this project useful and would like to support my work:
+
+[https://buymeacoffee.com/kyanjeuring](https://buymeacoffee.com/kyanjeuring)
+
 ## License
 
 MIT License
