@@ -234,6 +234,8 @@ Discovery is intentionally limited to one level of nesting to keep behavior fast
 > [!IMPORTANT]
 > When stacks are nested, DStack displays their relative path to avoid name collisions.
 
+---
+
 ## Register external Compose projects
 
 You can register any directory containing a supported Docker Compose file:
@@ -346,39 +348,13 @@ This approach keeps DStack simple while still giving power users full control ov
 
 ## Updating
 
-### Update to the latest version
+Updating DStack follows the same method used for installation.
 
-To update DStack, simply re-run the installer:
+- If you installed via the installer, re-run the installer.
+- If you installed via git clone, pull the latest changes.
+- If you installed manually, repeat the manual install steps.
 
-```bash
-curl -fsSL https://kyanjeuring.com/scripts/install-dstack | bash
-```
-
-This will:
-
-- Fetch the latest release
-- Replace the existing installation in ~/.local/share/dstack
-- Keep your shell configuration intact
-
-Restart your shell or reload your config if needed:
-
-```bash
-source ~/.bashrc   # or ~/.zshrc
-```
-
-### Update to a specific version
-
-If you want to pin or roll back to a specific version:
-
-```bash
-curl -fsSL https://kyanjeuring.com/scripts/install-dstack | DSTACK_VERSION=vx.y.z bash
-```
-
-This is useful if:
-- You want a known, stable version
-- You’re debugging a regression
-
-You manage multiple machines and want consistency
+After updating, restart your shell or reload your config if needed.
 
 ---
 
