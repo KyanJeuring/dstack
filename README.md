@@ -2,7 +2,7 @@
 
 **Docker Compose stack management**
 
-`DStack` is a small, zero‑dependency Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
+`DStack` is a small Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
 No more constantly changing directories just to run `docker compose up` or `down`.
 
@@ -30,7 +30,7 @@ DStack is for developers and operators who:
 - Register Compose projects from **any path**
 - Optional active stack context (`dstack <name>`)
 - Clean, UX‑focused error messages
-- No dependencies beyond Docker + Bash
+- No dependencies beyond Docker, Bash, and standard POSIX tools
 - Server and SSH friendly
 
 ---
@@ -80,6 +80,24 @@ Restart your shell or run:
 ```bash
 source ~/.bashrc   # or ~/.zshrc
 ```
+
+### Install via git clone
+
+If you prefer not to use an installer script or pipe remote code into your shell, you can clone the repository directly:
+
+```bash
+git clone https://github.com/kyanjeuring/dstack.git ~/.local/share/dstack
+chmod +x ~/.local/share/dstack/dstack.sh
+```
+
+Then source it into your shell config:
+
+```bash
+echo 'source ~/.local/share/dstack/dstack.sh' >> ~/.bashrc
+# or ~/.zshrc
+```
+
+---
 
 ## 15-second demo
 
@@ -319,7 +337,7 @@ You can edit the discovery paths directly in the script, but this is discouraged
 
 If you do edit the script, restart your shell or reload your configuration afterward.
 
-This approach keeps DStack simple and dependency-free, while still giving power users full control over their environment.
+This approach keeps DStack simple while still giving power users full control over their environment.
 
 > [!IMPORTANT]
 > Custom discovery paths must not contain spaces.
