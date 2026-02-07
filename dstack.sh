@@ -308,7 +308,7 @@ dip() {
 # Docker compose stack management
 # ==================================================
 
-## Show available docker compose stacks or register a new docker compose stack
+## Show available stacks or register a new stack with 'dstack add'
 dstack() {
   local cmd="$1"
   local name="$2"
@@ -320,7 +320,7 @@ dstack() {
   touch "$REGISTRY"
 
   if [[ -z "$cmd" || "$cmd" == "ls" ]]; then
-    info "Registered docker stacks:"
+    info "Registered stacks:"
     if [[ -s "$REGISTRY" ]]; then
       awk -F= '{printf "  %-20s %s\n", $1, $2}' "$REGISTRY"
     else
