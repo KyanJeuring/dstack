@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "DStack requires Bash 4 or newer."
+  exit 1
+fi
+
+set -euo pipefail
+IFS=$'\n\t'
+
+VERSION="v1.7.0"
+
 # ==================================================
 # Logging and confirmation helpers (internal)
 # ==================================================
 
 ### Basic logging function (internal)
 log() {
-  printf '%b\n' "${1:-}"
+  printf '%b\n' "$*"
 }
 
 if [[ -t 1 ]]; then
@@ -22,10 +32,10 @@ else
 fi
 
 ### Logging shortcuts (internal)
-info() { log "$INFO $*"; }
-ok()   { log "$OK $*"; }
-warn() { log "$WARN $*"; }
-err()  { log "$ERR $*"; }
+info() { log "$INFO" "$@"; }
+ok()   { log "$OK" "$@"; }
+warn() { log "$WARN" "$@"; }
+err()  { log "$ERR" "$@"; }
 
 ### Confirmation prompt (internal)
 confirm() {
@@ -201,7 +211,7 @@ dhelp() {
 
   shopt -s nullglob
   local files=(
-    "$DSTACK_ROOT"/dstack.sh
+    "$DSTACK_ROOT"/dstack
     "$DSTACK_ROOT"/commands/*.sh
   )
   shopt -u nullglob
@@ -258,6 +268,11 @@ dhelp() {
     }
     { print "  " $0 }
   '
+}
+
+## Show DStack version
+dversion() {
+  echo "DStack $VERSION"
 }
 
 # ==================================================
@@ -334,7 +349,7 @@ dstack() {
       find "$base" -maxdepth "$MAX_DEPTH" -mindepth 1 -type d 2>/dev/null |
       while read -r dir; do
         _dstack_find_compose_file "$dir" >/dev/null || continue
-        printf "  %-20s %s\n" "${dir#$base/}" "$dir"
+        printf "  %-20s %s\n" "${dir#"$base"/}" "$dir"
       done
     done
     return 0
@@ -346,7 +361,10 @@ dstack() {
       return 1
     }
 
-    path="$(realpath -m "$path")"
+    path="$(cd "$path" 2>/dev/null && pwd -P)" || {
+      err "Invalid path"
+      return 1
+    }
 
     _dstack_find_compose_file "$path" >/dev/null || {
       err "No Docker Compose file found in $path"
@@ -456,7 +474,7 @@ ddownv() {
 
 ## Stop all running containers (system-wide)
 dstopall() {
-  docker ps -q | xargs -r docker stop
+  docker ps -q | xargs docker stop 2>/dev/null || true
 }
 
 ## Recreate docker stack with volume removal
@@ -522,7 +540,7 @@ dlog() {
     return 1
   fi
 
-  local service="${@: -1}"
+  local service="${!#}"
   local args=("${@:1:$#-1}")
 
   _dcompose "${args[@]}" logs -f --tail=100 "$service"
@@ -547,8 +565,11 @@ dllog() {
     return 1
   fi
 
-  local service="${@: -2:1}"
-  local lines="${@: -1}"
+  local argc=$#
+  local last_index=$argc
+  local prev_index=$((argc-1))
+  local lines="${!last_index}"
+  local service="${!prev_index}"
 
   [[ "$lines" =~ ^[0-9]+$ ]] || lines=100
 
@@ -582,7 +603,7 @@ dexec() {
     return 1
   fi
 
-  local service="${@: -1}"
+  local service="${!#}"
   local args=("${@:1:$#-1}")
 
   _dcompose "${args[@]}" exec "$service" sh
