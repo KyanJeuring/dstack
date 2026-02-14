@@ -349,7 +349,7 @@ dstack() {
       find "$base" -maxdepth "$MAX_DEPTH" -mindepth 1 -type d 2>/dev/null |
       while read -r dir; do
         _dstack_find_compose_file "$dir" >/dev/null || continue
-        printf "  %-20s %s\n" "${dir#$base/}" "$dir"
+        printf "  %-20s %s\n" "${dir#"$base"/}" "$dir"
       done
     done
     return 0
@@ -540,7 +540,7 @@ dlog() {
     return 1
   fi
 
-  local service="${@: -1}"
+  local service="${!#}"
   local args=("${@:1:$#-1}")
 
   _dcompose "${args[@]}" logs -f --tail=100 "$service"
@@ -565,8 +565,11 @@ dllog() {
     return 1
   fi
 
-  local service="${@: -2:1}"
-  local lines="${@: -1}"
+  local argc=$#
+  local last_index=$argc
+  local prev_index=$((argc-1))
+  local lines="${!last_index}"
+  local service="${!prev_index}"
 
   [[ "$lines" =~ ^[0-9]+$ ]] || lines=100
 
@@ -600,7 +603,7 @@ dexec() {
     return 1
   fi
 
-  local service="${@: -1}"
+  local service="${!#}"
   local args=("${@:1:$#-1}")
 
   _dcompose "${args[@]}" exec "$service" sh
