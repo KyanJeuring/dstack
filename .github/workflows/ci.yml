@@ -10,7 +10,7 @@ jobs:
   lint-and-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
 
@@ -18,26 +18,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Ubuntu setup
       - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           sudo apt update
           sudo apt install -y shellcheck
 
+      # macOS setup
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install shellcheck bash
           echo "$(brew --prefix)/bin" >> $GITHUB_PATH
 
+      # Windows setup (Git Bash)
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          choco install shellcheck -y
+
+      # Lint
       - name: Lint with ShellCheck
+        shell: bash
         run: shellcheck -x dstack.sh
 
+      # Syntax check
       - name: Syntax check
+        shell: bash
         run: bash -n dstack.sh
 
+      # Executable check (skip Windows)
       - name: Ensure executable
+        if: runner.os != 'Windows'
+        shell: bash
         run: test -x dstack.sh
 
+      # Runtime check
       - name: Run version command
+        shell: bash
         run: ./dstack.sh dversion
