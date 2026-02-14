@@ -211,7 +211,7 @@ dhelp() {
 
   shopt -s nullglob
   local files=(
-    "$DSTACK_ROOT"/dstack
+    "${BASH_SOURCE[0]}"
     "$DSTACK_ROOT"/commands/*.sh
   )
   shopt -u nullglob
