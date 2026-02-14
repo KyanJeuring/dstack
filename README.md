@@ -1,4 +1,6 @@
-  <img src="./logo/dstack-logo.png">
+<img src="./logo/dstack-logo.png">
+
+![CI](https://github.com/kyanjeuring/dstack/actions/workflows/ci.yml/badge.svg)
 
 **Docker Compose stack management**
 
@@ -36,6 +38,9 @@ DStack is for developers and operators who:
 ---
 
 ## Platform availability
+
+> [!IMPORTANT]
+> DStack requires **Bash 4 or newer**.
 
 ### Linux
 
@@ -160,7 +165,8 @@ docker compose [stack] up -d --build --remove-orphans
 
 This provides a fast, consistent "bring everything up" experience.
 
-Full Docker Compose access
+### Full Docker Compose access
+
 Any arguments passed to `dcompose` are forwarded directly to Docker Compose.
 
 Examples:
@@ -229,7 +235,7 @@ Supported filenames:
 
 These locations were chosen because they are widely used across Linux, macOS, and WSL environments
 
-Discovery is intentionally limited to one level of nesting to keep behavior fast and predictable.
+Discovery is limited to shallow nesting (one level below each base directory) to keep behavior fast and predictable.
 
 > [!IMPORTANT]
 > When stacks are nested, DStack displays their relative path to avoid name collisions.
