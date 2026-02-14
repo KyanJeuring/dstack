@@ -15,19 +15,22 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install ShellCheck (Linux)
+      - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           sudo apt update
           sudo apt install -y shellcheck
 
-      - name: Install ShellCheck (macOS)
+      - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install shellcheck
+        run: |
+          brew install shellcheck bash
+          echo "$(brew --prefix)/bin" >> $GITHUB_PATH
 
-      - name: Lint
+      - name: Lint with ShellCheck
         run: shellcheck -x dstack
 
       - name: Syntax check
@@ -36,6 +39,5 @@ jobs:
       - name: Ensure executable
         run: test -x dstack
 
-      - name: Basic runtime test
-        run: |
-          ./dstack dversion
+      - name: Run version command
+        run: ./dstack dversion
