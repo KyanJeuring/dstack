@@ -8,7 +8,7 @@ fi
 set -euo pipefail
 IFS=$'\n\t'
 
-VERSION="v1.7.1"
+VERSION="v1.7.2"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -138,14 +138,10 @@ _dstack_resolve() {
 
 ### Check if argument is a docker compose verb (internal)
 _is_compose_verb() {
-  case "$1" in
-    up|down|start|stop|restart|logs|ps|pull|build|config|exec|run)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  if docker compose "$1" --help >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
 }
 
 ### Docker compose command wrapper (internal)
