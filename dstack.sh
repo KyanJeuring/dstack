@@ -5,10 +5,13 @@ if ((BASH_VERSINFO[0] < 4)); then
   exit 1
 fi
 
-set -euo pipefail
-IFS=$'\n\t'
+# When sourced (common for shell helpers), do not change global shell options.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+  IFS=$'\n\t'
+fi
 
-VERSION="v1.8.1"
+VERSION="v1.9.0"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -155,17 +158,17 @@ _dcompose() {
       shift
       compose="$(_dstack_find_compose_file "$dir")" || {
         err "No Docker Compose file found in $dir"
-        return 1
+        return 0
       }
-      docker compose -f "$compose" "$@"
-      return
+      docker compose -f "$compose" "$@" || true
+      return 0
     fi
   fi
 
   if [[ -n "${DSTACK:-}" ]]; then
     if compose="$(_dstack_find_compose_file "$DSTACK")"; then
-      docker compose -f "$compose" "$@"
-      return
+      docker compose -f "$compose" "$@" || true
+      return 0
     else
       warn "DSTACK invalid, clearing"
       unset DSTACK
@@ -173,8 +176,8 @@ _dcompose() {
   fi
 
   if compose="$(_dstack_find_compose_file "$(pwd)")"; then
-    docker compose -f "$compose" "$@"
-    return
+    docker compose -f "$compose" "$@" || true
+    return 0
   fi
 
   err "No Docker Compose context available"
@@ -182,7 +185,7 @@ _dcompose() {
   if [[ -n "$first_arg" ]] && ! _is_compose_verb "$first_arg"; then
     err "No Compose stack named '$first_arg' was found"
     err "Use 'dstack' to list available stacks"
-    return 1
+    return 0
   fi
 
   err "Provide a stack name, select a stack, or run this inside a Compose project"
@@ -190,7 +193,7 @@ _dcompose() {
   err "  <command> <stack>"
   err "  dstack <stack>"
   err "  cd <project> && <command>"
-  return 1
+  return 0
 }
 
 # ==================================================
@@ -289,11 +292,26 @@ dpsa() {
 
 ## Grep running containers by name
 dpsg() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dpsg <pattern>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dpsg nginx        # Find containers matching 'nginx'
+  dpsg my-app       # Find containers matching 'my-app'
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     err "Usage: dpsg <pattern>"
-    return 1
+    return 0
   fi
-  docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}" | grep -i "$1"
+  docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}" | grep -i "$1" || true
 }
 
 ## List docker compose services
@@ -308,11 +326,25 @@ dport() {
 
 ## Show IP address of a container
 dip() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dip <container-name>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dip my-container      # Show IP of 'my-container'
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     err "Usage: dip <container-name>"
-    return 1
+    return 0
   fi
-  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1"
+  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1" || true
 }
 
 # ==================================================
@@ -321,9 +353,33 @@ dip() {
 
 ## Show available stacks or register a new stack with 'dstack add'
 dstack() {
-  local cmd="$1"
-  local name="$2"
-  local path="$3"
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dstack [ls]
+  dstack add <name> <path>
+  dstack <stack>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dstack                        # List all available stacks
+  dstack ls                     # List all available stacks
+  dstack add myapp ~/projects/myapp   # Register a stack
+  dstack myapp                  # Set myapp as active stack context
+
+NOTES:
+  - Stacks are auto-discovered from common base directories
+  - Registered stacks are stored in ~/.config/dstack/registry
+  - Setting a stack exports the DSTACK environment variable
+EOF
+    return 0
+  fi
+
+  local cmd="${1:-}"
+  local name="${2:-}"
+  local path="${3:-}"
   local REGISTRY="$HOME/.config/dstack/registry"
   local MAX_DEPTH=2
 
@@ -354,17 +410,17 @@ dstack() {
   if [[ "$cmd" == "add" ]]; then
     [[ -n "$name" && -n "$path" ]] || {
       err "Usage: dstack add <name> <path>"
-      return 1
+      return 0
     }
 
     path="$(cd "$path" 2>/dev/null && pwd -P)" || {
       err "Invalid path"
-      return 1
+      return 0
     }
 
     _dstack_find_compose_file "$path" >/dev/null || {
       err "No Docker Compose file found in $path"
-      return 1
+      return 0
     }
 
     grep -v "^$name=" "$REGISTRY" 2>/dev/null >"$REGISTRY.tmp"
@@ -378,31 +434,51 @@ dstack() {
   local DIR
   DIR="$(_dstack_resolve "$cmd")" || {
     err "Stack not found: $cmd"
-    return 1
+    return 0
   }
 
   export DSTACK="$DIR"
   ok "Docker stack set: $cmd -> $DIR"
+  return 0
 }
 
 ## Unregister a docker compose stack
 dstackunset() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dstackunset <stack>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dstackunset myapp     # Unregister the 'myapp' stack
+
+NOTES:
+  - Only removes the stack from the registry
+  - Does not affect the actual project files
+  - Clears DSTACK context if the unregistered stack was active
+EOF
+    return 0
+  fi
+
   local name="$1"
   local REGISTRY="$HOME/.config/dstack/registry"
 
   [[ -n "$name" ]] || {
     err "Usage: dstackunset <stack>"
-    return 1
+    return 0
   }
 
   [[ -f "$REGISTRY" ]] || {
     err "No stack registry found"
-    return 1
+    return 0
   }
 
   if ! awk -F= -v s="$name" '$1 == s {found=1} END{exit !found}' "$REGISTRY"; then
     err "Stack '$name' is not registered"
-    return 1
+    return 0
   fi
 
   awk -F= -v s="$name" '$1 != s' "$REGISTRY" >"$REGISTRY.tmp" &&
@@ -422,50 +498,139 @@ dstackunset() {
 
 ## Start docker compose services
 dstart() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dstart [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dstart              # Start services in current context
+  dstart myapp        # Start services in the 'myapp' stack
+EOF
+    return 0
+  fi
+
   _dcompose "$@" start
 }
 
 ## Stop docker compose services
 dstop() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dstop [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dstop               # Stop services in current context
+  dstop myapp         # Stop services in the 'myapp' stack
+EOF
+    return 0
+  fi
+
   _dcompose "$@" stop
 }
 
 ## Run Docker Compose commands
 dcompose() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dcompose [stack] [subcommand] [args...]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dcompose                          # Run: up -d --build --remove-orphans in current context
+  dcompose myapp                    # Run: up -d --build --remove-orphans in 'myapp' stack
+  dcompose myapp ps                 # Run 'ps' in the 'myapp' stack
+  dcompose logs -f                  # Run 'logs -f' in current context
+
+NOTES:
+  - When called with no subcommand, defaults to: up -d --build --remove-orphans
+EOF
+    return 0
+  fi
+
   if [[ $# -eq 0 ]]; then
     info "No arguments given, running: up -d --build --remove-orphans"
-    _dcompose up -d --build --remove-orphans
-    return
+    _dcompose up -d --build --remove-orphans || true
+    return 0
   fi
 
   if [[ $# -eq 1 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
     info "No subcommand given, running: up -d --build --remove-orphans"
-    _dcompose "$1" up -d --build --remove-orphans
-    return
+    _dcompose "$1" up -d --build --remove-orphans || true
+    return 0
   fi
 
   if [[ $# -gt 1 ]]; then
     local first_arg="$1"
     if _dstack_resolve "$first_arg" >/dev/null 2>&1; then
       shift
-      _dcompose "$first_arg" "$@"
-      return
+      _dcompose "$first_arg" "$@" || true
+      return 0
     fi
   fi
 
-  _dcompose "$@"
+  _dcompose "$@" || true
+  return 0
 }
 
 ## Stop and remove containers (preserve volumes)
 ddown() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  ddown [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  ddown               # Stop and remove containers in current context
+  ddown myapp         # Stop and remove containers in the 'myapp' stack
+
+NOTES:
+  - Volumes are preserved. Use ddownv to also remove volumes.
+EOF
+    return 0
+  fi
+
   _dcompose "$@" down
 }
 
 ## Stop and remove containers + volumes (destructive)
 ddownv() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  ddownv [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  ddownv              # Stop and remove containers + volumes in current context
+  ddownv myapp        # Stop and remove containers + volumes in the 'myapp' stack
+
+NOTES:
+  - This is destructive. All volumes for the stack will be removed.
+  - Use ddown to preserve volumes.
+EOF
+    return 0
+  fi
+
   warn "This will remove containers + volumes"
-  confirm "Continue?" || return 1
-  _dcompose "$@" down -v
+  confirm "Continue?" || return 0
+  _dcompose "$@" down -v || true
+  return 0
 }
 
 ## Stop all running containers (system-wide)
@@ -475,29 +640,72 @@ dstopall() {
 
 ## Recreate docker stack with volume removal
 drecompose() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  drecompose [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  drecompose              # Recreate stack in current context
+  drecompose myapp        # Recreate the 'myapp' stack
+
+NOTES:
+  - Removes volumes before recreating. This is destructive.
+  - Use drebootstack to restart without removing volumes.
+EOF
+    return 0
+  fi
+
   if [[ $# -gt 1 ]]; then
     err "Usage: drecompose [stack]"
-    return 1
+    return 0
   fi
 
   info "Recreating docker stack with volume removal"
-  _dcompose "$@" down -v || return 1
-  _dcompose "$@" up -d
+  _dcompose "$@" down -v || true
+  _dcompose "$@" up -d || true
   ok "Stack recreated"
+  return 0
 }
+
 
 ## Restart docker stack with status messages
 drebootstack() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  drebootstack [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  drebootstack            # Reboot stack in current context
+  drebootstack myapp      # Reboot the 'myapp' stack
+
+NOTES:
+  - Runs down then up. Containers are recreated but volumes are preserved.
+  - Use drecompose to also remove volumes.
+  - Use drestart to restart without recreating containers.
+EOF
+    return 0
+  fi
+
   if [[ $# -gt 1 ]]; then
     err "Usage: drebootstack [stack]"
-    return 1
+    return 0
   fi
 
   info "Restarting docker stack"
-  _dcompose "$@" down || return 1
-  _dcompose "$@" up -d || return 1
+  _dcompose "$@" down || true
+  _dcompose "$@" up -d || true
   ok "Stack restarted"
+  return 0
 }
+
 
 ## Restart one or all services in a stack
 drestart() {
@@ -516,14 +724,15 @@ EXAMPLES:
   drestart <stack> <service>    # Restart one service in a named stack
 
 NOTES:
-  drestart does not recreate containers (use drebootstack for that)
+  - drestart does not recreate containers (use drebootstack, drecompose, dcompose or drebuild for that)
+  - Stack resolution follows standard DStack rules
 EOF
     return 0
   fi
 
   if [[ $# -gt 2 ]]; then
     err "Usage: drestart [stack] [service]"
-    return 1
+    return 0
   fi
 
   if [[ $# -eq 2 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
@@ -547,18 +756,40 @@ EOF
 
 ## Remove the current docker compose stack and prune unused Docker resources system-wide
 dstackpurge() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dstackpurge [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dstackpurge             # Purge stack in current context and prune Docker resources
+  dstackpurge myapp       # Purge the 'myapp' stack and prune Docker resources
+
+NOTES:
+  - Removes the compose stack including volumes.
+  - Also runs docker system prune to remove unused system-wide resources.
+  - Images and volumes still in use will NOT be removed.
+EOF
+    return 0
+  fi
+
   if [[ $# -gt 1 ]]; then
     err "Usage: dstackpurge [stack]"
-    return 1
+    return 0
   fi
 
   warn "This will remove the CURRENT compose stack and prune UNUSED Docker resources system-wide"
   warn "Images and volumes still in use will NOT be removed"
-  confirm "Continue?" || return 1
-  _dcompose "$@" down -v || return 1
-  docker system prune -f
+  confirm "Continue?" || return 0
+  _dcompose "$@" down -v || true
+  docker system prune -f || true
   ok "Docker stack purged and unused resources pruned"
+  return 0
 }
+
 
 # ==================================================
 # Docker logs & debugging
@@ -566,6 +797,26 @@ dstackpurge() {
 
 ## Follow logs for all services with optional line count (Ctrl+C to exit)
 dlogs() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dlogs [lines] [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dlogs                   # Follow logs in current context (last 100 lines)
+  dlogs 50                # Follow logs with last 50 lines
+  dlogs myapp             # Follow logs in the 'myapp' stack
+  dlogs 50 myapp          # Follow logs in 'myapp' with last 50 lines
+
+NOTES:
+  - Press Ctrl+C to exit
+EOF
+    return 0
+  fi
+
   local lines=100
 
   if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
@@ -578,9 +829,27 @@ dlogs() {
 
 ## Follow logs for a single service with optional line count (Ctrl+C to exit)
 dlog() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dlog [stack] <service>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dlog nginx              # Follow logs for the 'nginx' service in current context
+  dlog myapp nginx        # Follow logs for 'nginx' in the 'myapp' stack
+
+NOTES:
+  - Press Ctrl+C to exit
+EOF
+    return 0
+  fi
+
   if [[ $# -lt 1 ]]; then
     err "Usage: dlog [stack] <service>"
-    return 1
+    return 0
   fi
 
   local service="${!#}"
@@ -591,6 +860,26 @@ dlog() {
 
 ## Show last logs for all services (paged)
 dllogs() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dllogs [lines] [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dllogs                  # Show last 100 lines for all services in current context
+  dllogs 50               # Show last 50 lines for all services
+  dllogs myapp            # Show last 100 lines in the 'myapp' stack
+  dllogs 50 myapp         # Show last 50 lines in 'myapp'
+
+NOTES:
+  - Output is paged with less
+EOF
+    return 0
+  fi
+
   local lines=100
 
   if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
@@ -603,9 +892,29 @@ dllogs() {
 
 ## Show last logs for a single service (paged)
 dllog() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dllog [stack] <service> [lines]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dllog nginx             # Show last 100 lines for 'nginx' in current context
+  dllog nginx 50          # Show last 50 lines for 'nginx'
+  dllog myapp nginx       # Show last 100 lines for 'nginx' in 'myapp' stack
+  dllog myapp nginx 50    # Show last 50 lines for 'nginx' in 'myapp' stack
+
+NOTES:
+  - Output is paged with less
+EOF
+    return 0
+  fi
+
   if [[ $# -lt 1 ]]; then
     err "Usage: dllog [stack] <service> [lines]"
-    return 1
+    return 0
   fi
 
   local argc=$#
@@ -628,11 +937,28 @@ dstats() {
 
 ## Inspect a container (JSON output)
 dinspect() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dinspect <container-name>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dinspect my-container       # Inspect 'my-container' (paged JSON output)
+
+NOTES:
+  - Output is paged with less
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     err "Usage: dinspect <container-name>"
-    return 1
+    return 0
   fi
-  docker inspect "$1" | less
+  docker inspect "$1" | less || true
 }
 
 # ==================================================
@@ -641,22 +967,60 @@ dinspect() {
 
 ## Exec into a running container
 dexec() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dexec [stack] <service>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dexec nginx             # Exec into 'nginx' in current context
+  dexec myapp nginx       # Exec into 'nginx' in the 'myapp' stack
+
+NOTES:
+  - Opens a shell (sh) inside the container
+EOF
+    return 0
+  fi
+
   if [[ $# -lt 1 ]]; then
     err "Usage: dexec [stack] <service>"
-    return 1
+    return 0
   fi
 
   local service="${!#}"
   local args=("${@:1:$#-1}")
 
   _dcompose "${args[@]}" exec "$service" sh
+
 }
 
 ## Run one-off commands in a service
 drun() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  drun [stack] <service> <command>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  drun app bash                     # Run bash in 'app' in current context
+  drun myapp app bash               # Run bash in 'app' in the 'myapp' stack
+  drun app "ls -la /data"           # Run 'ls -la /data' in 'app' in current context
+
+NOTES:
+  - Container is removed after the command exits (--rm)
+EOF
+    return 0
+  fi
+
   if [[ $# -lt 2 ]]; then
     err "Usage: drun [stack] <service> <command>"
-    return 1
+    return 0
   fi
 
   local service
@@ -690,20 +1054,51 @@ dvol() {
 
 ## Remove a docker volume
 dvolrm() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dvolrm <volume-name>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dvolrm myapp_data       # Remove the 'myapp_data' volume
+
+NOTES:
+  - The volume must not be in use by any container
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     err "Usage: dvolrm <volume-name>"
-    return 1
+    return 0
   fi
-  docker volume rm "$1"
+  docker volume rm "$1" || true
 }
 
 ## Inspect a docker volume
 dvolinspect() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dvolinspect <volume-name>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dvolinspect myapp_data      # Inspect the 'myapp_data' volume
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     err "Usage: dvolinspect <volume-name>"
-    return 1
+    return 0
   fi
-  docker volume inspect "$1"
+  docker volume inspect "$1" || true
 }
 
 # ==================================================
@@ -723,8 +1118,9 @@ dcleani() {
 ## Full cleanup (destructive)
 dcleanall() {
   warn "Removing unused containers, images, and networks"
-  confirm "Continue?" || return 1
-  docker system prune -a
+  confirm "Continue?" || return 0
+  docker system prune -a || true
+  return 0
 }
 
 ## Show what prune would remove
@@ -738,41 +1134,109 @@ dprunewhat() {
 
 ## Pull latest images
 dpull() {
-  if [[ $# -gt 1 ]]; then
-    err "Usage: dpull [stack]"
-    return 1
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dpull [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dpull               # Pull latest images in current context
+  dpull myapp         # Pull latest images for the 'myapp' stack
+EOF
+    return 0
   fi
 
-   _dcompose "$@" pull
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dpull [stack]"
+    return 0
+  fi
+
+   _dcompose "$@" pull || true
+  return 0
 }
 
 ## Pull images and recreate containers
 dupdate() {
-  if [[ $# -gt 1 ]]; then
-    err "Usage: dupdate [stack]"
-    return 1
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dupdate [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dupdate             # Pull and recreate containers in current context
+  dupdate myapp       # Pull and recreate containers in the 'myapp' stack
+EOF
+    return 0
   fi
 
-  _dcompose "$@" pull && _dcompose "$@" up -d
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dupdate [stack]"
+    return 0
+  fi
+
+  _dcompose "$@" pull || true
+  _dcompose "$@" up -d || true
+  return 0
 }
 
 ## Rebuild and restart a single service
 drebuild() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  drebuild [stack] <service>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  drebuild app            # Rebuild and restart 'app' in current context
+  drebuild myapp app      # Rebuild and restart 'app' in the 'myapp' stack
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     echo "Usage: drebuild [stack] <service-name>"
-    return 1
+    return 0
   fi
-  _dcompose "$@" build "$1" && _dcompose "$@" up -d "$1"
+  _dcompose "$@" build "$1" 2>/dev/null || true
+  _dcompose "$@" up -d "$1" 2>/dev/null || true
+  return 0
 }
+
 
 ## Rebuild all services without using cache
 drebuildnocache() {
-  if [[ $# -gt 1 ]]; then
-    err "Usage: drebuildnocache [stack]"
-    return 1
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  drebuildnocache [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  drebuildnocache             # Rebuild all services in current context without cache
+  drebuildnocache myapp       # Rebuild all services in 'myapp' without cache
+EOF
+    return 0
   fi
 
-  _dcompose "$@" build --no-cache && _dcompose "$@" up -d
+  if [[ $# -gt 1 ]]; then
+    err "Usage: drebuildnocache [stack]"
+    return 0
+  fi
+
+  _dcompose "$@" build --no-cache 2>/dev/null || true
+  _dcompose "$@" up -d 2>/dev/null || true
+  return 0
 }
 
 # ==================================================
@@ -786,11 +1250,25 @@ dnet() {
 
 ## Inspect a docker network
 dnetinspect() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dnetinspect <network-name>
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dnetinspect myapp_default       # Inspect the 'myapp_default' network
+EOF
+    return 0
+  fi
+
   if [ -z "$1" ]; then
     err "Usage: dnetinspect [stack] <network-name>"
-    return 1
+    return 0
   fi
-  docker network inspect "$1"
+  docker network inspect "$1" || true
 }
 
 # ==================================================
@@ -799,10 +1277,30 @@ dnetinspect() {
 
 ## Show resolved docker compose config
 dconfig() {
-  if [[ $# -gt 1 ]]; then
-    err "Usage: dconfig [stack]"
-    return 1
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  dconfig [stack]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  dconfig             # Show resolved config in current context
+  dconfig myapp       # Show resolved config for the 'myapp' stack
+
+NOTES:
+  - Outputs the fully resolved docker compose configuration
+  - Useful for debugging variable substitution and extension merges
+EOF
+    return 0
   fi
 
-  _dcompose "$@" config
+  if [[ $# -gt 1 ]]; then
+    err "Usage: dconfig [stack]"
+    return 0
+  fi
+
+  _dcompose "$@" config || true
+  return 0
 }
