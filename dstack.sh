@@ -5,8 +5,11 @@ if ((BASH_VERSINFO[0] < 4)); then
   exit 1
 fi
 
-set -euo pipefail
-IFS=$'\n\t'
+# When sourced (common for shell helpers), do not change global shell options.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+  IFS=$'\n\t'
+fi
 
 VERSION="v1.9.0"
 
