@@ -8,7 +8,7 @@ fi
 set -euo pipefail
 IFS=$'\n\t'
 
-VERSION="v1.7.2"
+VERSION="v1.8.0"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
