@@ -8,7 +8,7 @@ fi
 set -euo pipefail
 IFS=$'\n\t'
 
-VERSION="v1.8.0"
+VERSION="v1.8.1"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -501,6 +501,26 @@ drebootstack() {
 
 ## Restart one or all services in a stack
 drestart() {
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'EOF'
+USAGE:
+  drestart [stack] [service]
+
+OPTIONS:
+  -h, --help    Show this help message
+
+EXAMPLES:
+  drestart                      # Restart all services in current context
+  drestart <service>            # Restart one service in current context
+  drestart <stack>              # Restart all services in a named stack
+  drestart <stack> <service>    # Restart one service in a named stack
+
+NOTES:
+  drestart does not recreate containers (use drebootstack for that)
+EOF
+    return 0
+  fi
+
   if [[ $# -gt 2 ]]; then
     err "Usage: drestart [stack] [service]"
     return 1
