@@ -8,7 +8,7 @@ fi
 set -euo pipefail
 IFS=$'\n\t'
 
-VERSION="v1.7.2"
+VERSION="v1.8.0"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -499,6 +499,32 @@ drebootstack() {
   ok "Stack restarted"
 }
 
+## Restart one or all services in a stack
+drestart() {
+  if [[ $# -gt 2 ]]; then
+    err "Usage: drestart [stack] [service]"
+    return 1
+  fi
+
+  if [[ $# -eq 2 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
+    local stack="$1"
+    local service="$2"
+    info "Restarting service '$service' in stack '$stack'"
+    _dcompose "$stack" restart "$service"
+  elif [[ $# -eq 1 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
+    info "Restarting all services in stack '$1'"
+    _dcompose "$1" restart
+  elif [[ $# -eq 1 ]]; then
+    info "Restarting service '$1'"
+    _dcompose restart "$1"
+  else
+    info "Restarting all services"
+    _dcompose restart
+  fi
+
+  ok "Done"
+}
+
 ## Remove the current docker compose stack and prune unused Docker resources system-wide
 dstackpurge() {
   if [[ $# -gt 1 ]]; then
@@ -530,6 +556,7 @@ dlogs() {
   _dcompose "$@" logs -f --tail="$lines"
 }
 
+## Follow logs for a single service with optional line count (Ctrl+C to exit)
 dlog() {
   if [[ $# -lt 1 ]]; then
     err "Usage: dlog [stack] <service>"
