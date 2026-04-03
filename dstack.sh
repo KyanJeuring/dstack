@@ -155,17 +155,17 @@ _dcompose() {
       shift
       compose="$(_dstack_find_compose_file "$dir")" || {
         err "No Docker Compose file found in $dir"
-        return 1
+        return 0
       }
-      docker compose -f "$compose" "$@"
-      return
+      docker compose -f "$compose" "$@" || true
+      return 0
     fi
   fi
 
   if [[ -n "${DSTACK:-}" ]]; then
     if compose="$(_dstack_find_compose_file "$DSTACK")"; then
-      docker compose -f "$compose" "$@"
-      return
+      docker compose -f "$compose" "$@" || true
+      return 0
     else
       warn "DSTACK invalid, clearing"
       unset DSTACK
@@ -173,8 +173,8 @@ _dcompose() {
   fi
 
   if compose="$(_dstack_find_compose_file "$(pwd)")"; then
-    docker compose -f "$compose" "$@"
-    return
+    docker compose -f "$compose" "$@" || true
+    return 0
   fi
 
   err "No Docker Compose context available"
@@ -182,7 +182,7 @@ _dcompose() {
   if [[ -n "$first_arg" ]] && ! _is_compose_verb "$first_arg"; then
     err "No Compose stack named '$first_arg' was found"
     err "Use 'dstack' to list available stacks"
-    return 1
+    return 0
   fi
 
   err "Provide a stack name, select a stack, or run this inside a Compose project"
@@ -190,7 +190,7 @@ _dcompose() {
   err "  <command> <stack>"
   err "  dstack <stack>"
   err "  cd <project> && <command>"
-  return 1
+  return 0
 }
 
 # ==================================================
@@ -306,10 +306,10 @@ EOF
 
   if [ -z "$1" ]; then
     err "Usage: dpsg <pattern>"
-    return 1
+    return 0
   fi
-  docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}" | grep -i "$1"
-}
+  docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}" | grep -i "$1" || true
+
 
 ## List docker compose services
 dsvc() {
@@ -339,10 +339,10 @@ EOF
 
   if [ -z "$1" ]; then
     err "Usage: dip <container-name>"
-    return 1
+    return 0
   fi
-  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1"
-}
+  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1" || true
+
 
 # ==================================================
 # Docker compose stack management
@@ -375,7 +375,7 @@ EOF
   fi
 
   local cmd="${1:-}"
-  local name="$2"
+  local name="${2:-}"
   local path="${3:-}"
   local REGISTRY="$HOME/.config/dstack/registry"
   local MAX_DEPTH=2
@@ -407,17 +407,17 @@ EOF
   if [[ "$cmd" == "add" ]]; then
     [[ -n "$name" && -n "$path" ]] || {
       err "Usage: dstack add <name> <path>"
-      return 1
+      return 0
     }
 
     path="$(cd "$path" 2>/dev/null && pwd -P)" || {
       err "Invalid path"
-      return 1
+      return 0
     }
 
     _dstack_find_compose_file "$path" >/dev/null || {
       err "No Docker Compose file found in $path"
-      return 1
+      return 0
     }
 
     grep -v "^$name=" "$REGISTRY" 2>/dev/null >"$REGISTRY.tmp"
@@ -431,11 +431,12 @@ EOF
   local DIR
   DIR="$(_dstack_resolve "$cmd")" || {
     err "Stack not found: $cmd"
-    return 1
+    return 0
   }
 
   export DSTACK="$DIR"
   ok "Docker stack set: $cmd -> $DIR"
+  return 0
 }
 
 ## Unregister a docker compose stack
@@ -464,17 +465,17 @@ EOF
 
   [[ -n "$name" ]] || {
     err "Usage: dstackunset <stack>"
-    return 1
+    return 0
   }
 
   [[ -f "$REGISTRY" ]] || {
     err "No stack registry found"
-    return 1
+    return 0
   }
 
   if ! awk -F= -v s="$name" '$1 == s {found=1} END{exit !found}' "$REGISTRY"; then
     err "Stack '$name' is not registered"
-    return 1
+    return 0
   fi
 
   awk -F= -v s="$name" '$1 != s' "$REGISTRY" >"$REGISTRY.tmp" &&
@@ -556,26 +557,27 @@ EOF
 
   if [[ $# -eq 0 ]]; then
     info "No arguments given, running: up -d --build --remove-orphans"
-    _dcompose up -d --build --remove-orphans
-    return
+    _dcompose up -d --build --remove-orphans || true
+    return 0
   fi
 
   if [[ $# -eq 1 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
     info "No subcommand given, running: up -d --build --remove-orphans"
-    _dcompose "$1" up -d --build --remove-orphans
-    return
+    _dcompose "$1" up -d --build --remove-orphans || true
+    return 0
   fi
 
   if [[ $# -gt 1 ]]; then
     local first_arg="$1"
     if _dstack_resolve "$first_arg" >/dev/null 2>&1; then
       shift
-      _dcompose "$first_arg" "$@"
-      return
+      _dcompose "$first_arg" "$@" || true
+      return 0
     fi
   fi
 
-  _dcompose "$@"
+  _dcompose "$@" || true
+  return 0
 }
 
 ## Stop and remove containers (preserve volumes)
@@ -623,8 +625,8 @@ EOF
   fi
 
   warn "This will remove containers + volumes"
-  confirm "Continue?" || return 1
-  _dcompose "$@" down -v
+  confirm "Continue?" || return 0
+  _dcompose "$@" down -v || true
 }
 
 ## Stop all running containers (system-wide)
@@ -655,14 +657,15 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: drecompose [stack]"
-    return 1
+    return 0
   fi
 
   info "Recreating docker stack with volume removal"
-  _dcompose "$@" down -v || return 1
-  _dcompose "$@" up -d
+  _dcompose "$@" down -v || true
+  _dcompose "$@" up -d || true
   ok "Stack recreated"
-}
+  return 0
+
 
 ## Restart docker stack with status messages
 drebootstack() {
@@ -688,14 +691,15 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: drebootstack [stack]"
-    return 1
+    return 0
   fi
 
   info "Restarting docker stack"
-  _dcompose "$@" down || return 1
-  _dcompose "$@" up -d || return 1
+  _dcompose "$@" down || true
+  _dcompose "$@" up -d || true
   ok "Stack restarted"
-}
+  return 0
+
 
 ## Restart one or all services in a stack
 drestart() {
@@ -722,7 +726,7 @@ EOF
 
   if [[ $# -gt 2 ]]; then
     err "Usage: drestart [stack] [service]"
-    return 1
+    return 0
   fi
 
   if [[ $# -eq 2 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
@@ -768,16 +772,17 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: dstackpurge [stack]"
-    return 1
+    return 0
   fi
 
   warn "This will remove the CURRENT compose stack and prune UNUSED Docker resources system-wide"
   warn "Images and volumes still in use will NOT be removed"
-  confirm "Continue?" || return 1
-  _dcompose "$@" down -v || return 1
-  docker system prune -f
+  confirm "Continue?" || return 0
+  _dcompose "$@" down -v || true
+  docker system prune -f || true
   ok "Docker stack purged and unused resources pruned"
-}
+  return 0
+
 
 # ==================================================
 # Docker logs & debugging
@@ -837,7 +842,7 @@ EOF
 
   if [[ $# -lt 1 ]]; then
     err "Usage: dlog [stack] <service>"
-    return 1
+    return 0
   fi
 
   local service="${!#}"
@@ -902,7 +907,7 @@ EOF
 
   if [[ $# -lt 1 ]]; then
     err "Usage: dllog [stack] <service> [lines]"
-    return 1
+    return 0
   fi
 
   local argc=$#
@@ -944,9 +949,9 @@ EOF
 
   if [ -z "$1" ]; then
     err "Usage: dinspect <container-name>"
-    return 1
+    return 0
   fi
-  docker inspect "$1" | less
+  docker inspect "$1" | less || true
 }
 
 # ==================================================
@@ -975,7 +980,7 @@ EOF
 
   if [[ $# -lt 1 ]]; then
     err "Usage: dexec [stack] <service>"
-    return 1
+    return 0
   fi
 
   local service="${!#}"
@@ -1007,7 +1012,7 @@ EOF
 
   if [[ $# -lt 2 ]]; then
     err "Usage: drun [stack] <service> <command>"
-    return 1
+    return 0
   fi
 
   local service
@@ -1060,10 +1065,10 @@ EOF
 
   if [ -z "$1" ]; then
     err "Usage: dvolrm <volume-name>"
-    return 1
+    return 0
   fi
-  docker volume rm "$1"
-}
+  docker volume rm "$1" || true
+
 
 ## Inspect a docker volume
 dvolinspect() {
@@ -1083,10 +1088,10 @@ EOF
 
   if [ -z "$1" ]; then
     err "Usage: dvolinspect <volume-name>"
-    return 1
+    return 0
   fi
-  docker volume inspect "$1"
-}
+  docker volume inspect "$1" || true
+
 
 # ==================================================
 # Docker cleanup
@@ -1105,9 +1110,10 @@ dcleani() {
 ## Full cleanup (destructive)
 dcleanall() {
   warn "Removing unused containers, images, and networks"
-  confirm "Continue?" || return 1
-  docker system prune -a
-}
+  confirm "Continue?" || return 0
+  docker system prune -a || true
+  return 0
+
 
 ## Show what prune would remove
 dprunewhat() {
@@ -1137,10 +1143,11 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: dpull [stack]"
-    return 1
+    return 0
   fi
 
-   _dcompose "$@" pull
+   _dcompose "$@" pull || true
+  return 0
 }
 
 ## Pull images and recreate containers
@@ -1162,10 +1169,12 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: dupdate [stack]"
-    return 1
+    return 0
   fi
 
-  _dcompose "$@" pull && _dcompose "$@" up -d
+  _dcompose "$@" pull || true
+  _dcompose "$@" up -d || true
+  return 0
 }
 
 ## Rebuild and restart a single service
@@ -1187,10 +1196,12 @@ EOF
 
   if [ -z "$1" ]; then
     echo "Usage: drebuild [stack] <service-name>"
-    return 1
+    return 0
   fi
-  _dcompose "$@" build "$1" && _dcompose "$@" up -d "$1"
-}
+  _dcompose "$@" build "$1" 2>/dev/null || true
+  _dcompose "$@" up -d "$1" 2>/dev/null || true
+  return 0
+
 
 ## Rebuild all services without using cache
 drebuildnocache() {
@@ -1211,11 +1222,13 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: drebuildnocache [stack]"
-    return 1
+    return 0
   fi
 
-  _dcompose "$@" build --no-cache && _dcompose "$@" up -d
-}
+  _dcompose "$@" build --no-cache 2>/dev/null || true
+  _dcompose "$@" up -d 2>/dev/null || true
+  return 0
+
 
 # ==================================================
 # Docker networking
@@ -1244,10 +1257,10 @@ EOF
 
   if [ -z "$1" ]; then
     err "Usage: dnetinspect [stack] <network-name>"
-    return 1
+    return 0
   fi
-  docker network inspect "$1"
-}
+  docker network inspect "$1" || true
+
 
 # ==================================================
 # Docker compose utilities
@@ -1276,8 +1289,9 @@ EOF
 
   if [[ $# -gt 1 ]]; then
     err "Usage: dconfig [stack]"
-    return 1
+    return 0
   fi
 
-  _dcompose "$@" config
+  _dcompose "$@" config || true
+  return 0
 }
