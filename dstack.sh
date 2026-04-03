@@ -530,6 +530,7 @@ dlogs() {
   _dcompose "$@" logs -f --tail="$lines"
 }
 
+## Follow logs for a single service with optional line count (Ctrl+C to exit)
 dlog() {
   if [[ $# -lt 1 ]]; then
     err "Usage: dlog [stack] <service>"
