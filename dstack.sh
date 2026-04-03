@@ -309,7 +309,7 @@ EOF
     return 0
   fi
   docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}" | grep -i "$1" || true
-
+}
 
 ## List docker compose services
 dsvc() {
@@ -342,7 +342,7 @@ EOF
     return 0
   fi
   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$1" || true
-
+}
 
 # ==================================================
 # Docker compose stack management
@@ -627,6 +627,7 @@ EOF
   warn "This will remove containers + volumes"
   confirm "Continue?" || return 0
   _dcompose "$@" down -v || true
+  return 0
 }
 
 ## Stop all running containers (system-wide)
@@ -665,6 +666,7 @@ EOF
   _dcompose "$@" up -d || true
   ok "Stack recreated"
   return 0
+}
 
 
 ## Restart docker stack with status messages
@@ -699,6 +701,7 @@ EOF
   _dcompose "$@" up -d || true
   ok "Stack restarted"
   return 0
+}
 
 
 ## Restart one or all services in a stack
@@ -782,6 +785,7 @@ EOF
   docker system prune -f || true
   ok "Docker stack purged and unused resources pruned"
   return 0
+}
 
 
 # ==================================================
@@ -987,6 +991,7 @@ EOF
   local args=("${@:1:$#-1}")
 
   _dcompose "${args[@]}" exec "$service" sh
+
 }
 
 ## Run one-off commands in a service
@@ -1068,7 +1073,7 @@ EOF
     return 0
   fi
   docker volume rm "$1" || true
-
+}
 
 ## Inspect a docker volume
 dvolinspect() {
@@ -1091,7 +1096,7 @@ EOF
     return 0
   fi
   docker volume inspect "$1" || true
-
+}
 
 # ==================================================
 # Docker cleanup
@@ -1113,7 +1118,7 @@ dcleanall() {
   confirm "Continue?" || return 0
   docker system prune -a || true
   return 0
-
+}
 
 ## Show what prune would remove
 dprunewhat() {
@@ -1201,6 +1206,7 @@ EOF
   _dcompose "$@" build "$1" 2>/dev/null || true
   _dcompose "$@" up -d "$1" 2>/dev/null || true
   return 0
+}
 
 
 ## Rebuild all services without using cache
@@ -1228,7 +1234,7 @@ EOF
   _dcompose "$@" build --no-cache 2>/dev/null || true
   _dcompose "$@" up -d 2>/dev/null || true
   return 0
-
+}
 
 # ==================================================
 # Docker networking
@@ -1260,7 +1266,7 @@ EOF
     return 0
   fi
   docker network inspect "$1" || true
-
+}
 
 # ==================================================
 # Docker compose utilities
