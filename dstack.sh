@@ -11,7 +11,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   IFS=$'\n\t'
 fi
 
-VERSION="v1.9.0"
+DSTACK_VERSION="v1.9.0"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -271,7 +271,7 @@ dhelp() {
 
 ## Show DStack version
 dversion() {
-  echo "DStack $VERSION"
+  echo "DStack $DSTACK_VERSION"
 }
 
 # ==================================================
