@@ -22,23 +22,30 @@ log() {
   printf '%b\n' "$*"
 }
 
-if [[ -t 1 ]]; then
-  INFO="\033[0;34m\033[1m[INFO]\033[0m"
-  OK="\033[0;32m\033[1m[OK]\033[0m"
-  WARN="\033[0;33m\033[1m[WARN]\033[0m"
-  ERR="\033[0;31m\033[1m[ERROR]\033[0m"
-else
-  INFO="[INFO]"
-  OK="[OK]"
-  WARN="[WARN]"
-  ERR="[ERROR]"
-fi
+_log_emit() {
+  local level="$1"
+  shift
 
-### Logging shortcuts (internal)
-info() { log "$INFO" "$@"; }
-ok()   { log "$OK" "$@"; }
-warn() { log "$WARN" "$@"; }
-err()  { log "$ERR" "$@"; }
+  local prefix
+  if [[ -t 1 ]]; then
+    case "$level" in
+      INFO)  prefix='\033[0;34m\033[1m[INFO]\033[0m' ;;
+      OK)    prefix='\033[0;32m\033[1m[OK]\033[0m' ;;
+      WARN)  prefix='\033[0;33m\033[1m[WARN]\033[0m' ;;
+      ERROR) prefix='\033[0;31m\033[1m[ERROR]\033[0m' ;;
+      *)     prefix="[$level]" ;;
+    esac
+  else
+    prefix="[$level]"
+  fi
+
+  log "$prefix $*"
+}
+
+info() { _log_emit INFO "$@"; }
+ok()   { _log_emit OK "$@"; }
+warn() { _log_emit WARN "$@"; }
+err()  { _log_emit ERROR "$@"; }
 
 ### Confirmation prompt (internal)
 confirm() {
