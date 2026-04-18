@@ -371,10 +371,10 @@ OPTIONS:
   -h, --help    Show this help message
 
 EXAMPLES:
-  dstack                        # List all available stacks
-  dstack ls                     # List all available stacks
+  dstack                              # List all available stacks
+  dstack ls                           # List all available stacks
   dstack add myapp ~/projects/myapp   # Register a stack
-  dstack myapp                  # Set myapp as active stack context
+  dstack myapp                        # Set myapp as active stack context
 
 NOTES:
   - Stacks are auto-discovered from common base directories
