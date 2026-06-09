@@ -177,7 +177,6 @@ Examples:
 dcompose up -d
 dcompose mystack restart
 dcompose down -v
-dcompose mystack compose.prod.yaml up -d
 dcompose mystack -f compose.yml -f compose.prod.yaml up -d
 dcompose -f compose.prod.yaml logs -f
 ```
