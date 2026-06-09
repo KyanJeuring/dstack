@@ -12,7 +12,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   IFS=$'\n\t'
 fi
 
-DSTACK_VERSION="v1.9.0"
+DSTACK_VERSION="v1.10.1"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -314,10 +314,10 @@ _dcompose() {
         selector="1"
       fi
 
-      mapfile -t compose_files < <(_dstack_resolve_compose_files "$dir" "$selector") || {
+      if ! mapfile -t compose_files < <(_dstack_resolve_compose_files "$dir" "$selector") || ((${#compose_files[@]} == 0)); then
         err "No Docker Compose file found in $dir"
         return 0
-      }
+      fi
 
       for compose in "${compose_files[@]}"; do
         compose_flags+=("-f" "$compose")
@@ -342,7 +342,7 @@ _dcompose() {
       selector="1"
     fi
 
-    if mapfile -t compose_files < <(_dstack_resolve_compose_files "$DSTACK" "$selector"); then
+    if mapfile -t compose_files < <(_dstack_resolve_compose_files "$DSTACK" "$selector") && ((${#compose_files[@]})); then
       for compose in "${compose_files[@]}"; do
         compose_flags+=("-f" "$compose")
       done
@@ -368,7 +368,7 @@ _dcompose() {
     selector="1"
   fi
 
-  if mapfile -t compose_files < <(_dstack_resolve_compose_files "$(pwd)" "$selector"); then
+  if mapfile -t compose_files < <(_dstack_resolve_compose_files "$(pwd)" "$selector") && ((${#compose_files[@]})); then
     for compose in "${compose_files[@]}"; do
       compose_flags+=("-f" "$compose")
     done
@@ -377,19 +377,8 @@ _dcompose() {
     return 0
   fi
 
-  err "No Docker Compose context available"
-
-  if [[ -n "$first_arg" ]] && ! _is_compose_verb "$first_arg"; then
-    err "No Compose stack named '$first_arg' was found"
-    err "Use 'dstack' to list available stacks"
-    return 0
-  fi
-
-  err "Provide a stack name, select a stack, or run this inside a Compose project"
-  err "Examples:"
-  err "  <command> <stack>"
-  err "  dstack <stack>"
-  err "  cd <project> && <command>"
+  err "No compose file found in the current directory or active stack context."
+  err "Use 'dstack' to set an active stack or run from a directory with a compose file."
   return 0
 }
 
