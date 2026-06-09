@@ -155,6 +155,8 @@ It behaves like `docker compose`, but lets you run commands from anywhere by res
 2. The active stack (`dstack <name>`)
 3. The current directory
 
+If a stack directory contains multiple Compose files, you can choose which file to use with a positional filename or standard `-f/--file` flags.
+
 ### Default behavior
 
 When no arguments are provided, `dcompose` runs:
@@ -175,6 +177,9 @@ Examples:
 dcompose up -d
 dcompose mystack restart
 dcompose down -v
+dcompose mystack compose.prod.yaml up -d
+dcompose mystack -f compose.yml -f compose.prod.yaml up -d
+dcompose -f compose.prod.yaml logs -f
 ```
 
 This allows advanced workflows without limiting Docker Compose functionality.
@@ -191,7 +196,7 @@ DStack also provides a set of convenience commands (`ddown`, `dlogs`, `dexec`, e
 | `dstack` | List available stacks |
 | `dstack add <name> <path>` | Register a stack |
 | `dstackunset <name>` | Unregister a stack |
-| `dcompose [stack]` | Build & start stack |
+| `dcompose [stack] [compose-file]` | Build & start stack |
 | `ddown [stack]` | Stop & remove containers |
 | `dlogs [stack]` | Follow logs |
 | `dexec [stack] <service>` | Exec into container |
@@ -279,7 +284,9 @@ When you run a command, `dstack` resolves the Compose context in this order:
 2. Active stack (`dstack myproject`)
 3. Local Docker Compose file in the current directory
 
-DStack will use the first supported Compose file it finds, in a deterministic order.
+DStack will use the first supported Compose file it finds by default, in a deterministic order.
+
+When more than one Compose file is present, choose one with `dcompose <stack> <compose-file>`, `dcompose <stack> -f <compose-file>`, or combine multiple files with repeated `-f` flags.
 
 If no context is found, `dstack` tells you exactly what to do.
 
@@ -293,11 +300,11 @@ DStack supports the standard Docker Compose filenames:
 - `docker-compose.yaml`
 - `compose.yml`
 - `compose.yaml`
+- Any additional file in the stack directory matching `*compose*.yml` or `*compose*.yaml`
 
-When multiple files are present, DStack selects the first matching file in a fixed order to ensure predictable behavior.
+When multiple files are present, DStack still selects the first matching file by default to keep existing workflows predictable.
 
-DStack does not automatically combine multiple Compose files.
-If you rely on overrides (for example `docker-compose.override.yml`), manage those explicitly via Docker Compose itself.
+To pick a different file, pass a filename or `-f/--file` flags to `dcompose`. Multiple files can be combined in the same command, matching Docker Compose's native behavior.
 
 ### Customizing Compose filenames (advanced)
 

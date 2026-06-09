@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2221,SC2222,SC2317,SC2155,SC2329,SC2086
 
 if ((BASH_VERSINFO[0] < 4)); then
   echo "DStack requires Bash 4 or newer."
@@ -73,17 +74,23 @@ done
 ### List of supported docker compose files (internal)
 _dstack_compose_files() {
   local dir="$1"
+  local file
 
   if [[ -n "${DSTACK_COMPOSE_FILES:-}" ]]; then
-    echo "$DSTACK_COMPOSE_FILES"
+    printf '%s\n' $DSTACK_COMPOSE_FILES
     return
   fi
 
-  echo \
+  for file in \
     "$dir/docker-compose.yml" \
     "$dir/docker-compose.yaml" \
     "$dir/compose.yml" \
-    "$dir/compose.yaml"
+    "$dir/compose.yaml" \
+    "$dir"/*compose*.yml \
+    "$dir"/*compose*.yaml
+  do
+    [[ -f "$file" ]] && printf '%s\n' "$file"
+  done | awk '!seen[$0]++'
 }
 
 ### Find docker compose file in directory (internal)
@@ -99,6 +106,125 @@ _dstack_find_compose_file() {
   done
 
   return 1
+}
+
+### Resolve compose files for a stack directory (internal)
+_dstack_resolve_compose_files() {
+  local dir="$1"
+  local selector="${2:-}"
+  local -a candidates=()
+  local -a resolved=()
+  local -a output=()
+  local candidate
+  local item
+  local found
+  local i
+  local choice
+
+  mapfile -t candidates < <(_dstack_compose_files "$dir")
+
+  ((${#candidates[@]})) || return 1
+
+  if [[ -z "$selector" ]]; then
+    if ((${#candidates[@]} == 1)); then
+      printf '%s\n' "${candidates[0]}"
+      return 0
+    fi
+
+    if [[ ! -t 0 ]]; then
+      err "Multiple compose files found. Choose one with -f, --file, --compose-file, or DSTACK_COMPOSE_FILE."
+      return 1
+    fi
+
+    printf '%s\n' "Multiple compose files found:" >&2
+    for i in "${!candidates[@]}"; do
+      printf '  %s) %s\n' "$((i + 1))" "${candidates[$i]#"$dir"/}" >&2
+    done
+    printf '  %s) all\n' "$((${#candidates[@]} + 1))" >&2
+
+    read -rp "Select compose file(s): " choice
+    choice="${choice//[[:space:]]/}"
+
+    [[ -n "$choice" ]] || {
+      err "Invalid selection"
+      return 1
+    }
+
+    if [[ "$choice" == "all" || "$choice" == "$((${#candidates[@]} + 1))" ]]; then
+      printf '%s\n' "${candidates[@]}"
+      return 0
+    fi
+
+    _dstack_resolve_compose_files "$dir" "$choice"
+    return $?
+  fi
+
+  IFS=',' read -r -a resolved <<< "$selector"
+
+  for item in "${resolved[@]}"; do
+    found=""
+    item="${item//[[:space:]]/}"
+
+    [[ -n "$item" ]] || continue
+
+    case "$item" in
+      all)
+        printf '%s\n' "${candidates[@]}"
+        return 0
+        ;;
+      [0-9]*)
+        if (( item >= 1 && item <= ${#candidates[@]} )); then
+          found="${candidates[$((item - 1))]}"
+        fi
+        ;;
+      */*|./*|../*|/*)
+        if [[ -f "$item" ]]; then
+          found="$item"
+        elif [[ -f "$dir/$item" ]]; then
+          found="$dir/$item"
+        fi
+        ;;
+    esac
+
+    if [[ -z "$found" ]]; then
+      for candidate in "${candidates[@]}"; do
+        if [[ "$candidate" == "$dir/$item" || "${candidate#"$dir"/}" == "$item" || "$(basename "$candidate")" == "$item" ]]; then
+          found="$candidate"
+          break
+        fi
+      done
+    fi
+
+    [[ -n "$found" ]] || {
+      err "Compose file not found: $item"
+      return 1
+    }
+
+    output+=("$found")
+  done
+
+  printf '%s\n' "${output[@]}" | awk '!seen[$0]++'
+}
+
+### Resolve compose files to docker compose -f flags (internal)
+_dstack_resolve_compose_flags() {
+  local dir="$1"
+  local selector="${2:-}"
+  local -a files=()
+  local file
+
+  mapfile -t files < <(_dstack_resolve_compose_files "$dir" "$selector") || return 1
+
+  for file in "${files[@]}"; do
+    printf '%s\n' -f "$file"
+  done
+}
+
+### Detect compose file selector syntax (internal)
+_dstack_looks_like_compose_selector() {
+  local token="$1"
+
+  [[ "$token" == "all" || "$token" == *,* || "$token" =~ ^[0-9]+$ || "$token" == *.yml || "$token" == *.yaml || "$token" == */* ]]
 }
 
 ### Resolve docker compose stack path (internal)
@@ -158,23 +284,70 @@ _is_compose_verb() {
 _dcompose() {
   local dir
   local compose
-  local first_arg="$1"
+  local -a compose_files=()
+  local -a compose_flags=()
+  local selector=""
+  local first_arg
+  local interactive_select=1
+
+  if [[ "${1:-}" == "--no-select" ]]; then
+    interactive_select=0
+    shift
+  fi
+
+  first_arg="${1:-}"
 
   if [[ $# -gt 0 ]]; then
     if dir="$(_dstack_resolve "$first_arg")"; then
       shift
-      compose="$(_dstack_find_compose_file "$dir")" || {
+
+      while [[ $# -gt 1 && ( "$1" == "-f" || "$1" == "--file" || "$1" == "--compose-file" ) ]]; do
+        selector+="${selector:+,}$2"
+        shift 2
+      done
+
+      if [[ -z "$selector" && -n "${DSTACK_COMPOSE_FILE:-}" ]]; then
+        selector="$DSTACK_COMPOSE_FILE"
+      fi
+
+      if [[ "$interactive_select" -eq 0 && -z "$selector" ]]; then
+        selector="1"
+      fi
+
+      mapfile -t compose_files < <(_dstack_resolve_compose_files "$dir" "$selector") || {
         err "No Docker Compose file found in $dir"
         return 0
       }
-      docker compose -f "$compose" "$@" || true
+
+      for compose in "${compose_files[@]}"; do
+        compose_flags+=("-f" "$compose")
+      done
+
+      docker compose "${compose_flags[@]}" "$@" || true
       return 0
     fi
   fi
 
   if [[ -n "${DSTACK:-}" ]]; then
-    if compose="$(_dstack_find_compose_file "$DSTACK")"; then
-      docker compose -f "$compose" "$@" || true
+    while [[ $# -gt 1 && ( "$1" == "-f" || "$1" == "--file" || "$1" == "--compose-file" ) ]]; do
+      selector+="${selector:+,}$2"
+      shift 2
+    done
+
+    if [[ -z "$selector" && -n "${DSTACK_COMPOSE_FILE:-}" ]]; then
+      selector="$DSTACK_COMPOSE_FILE"
+    fi
+
+    if [[ "$interactive_select" -eq 0 && -z "$selector" ]]; then
+      selector="1"
+    fi
+
+    if mapfile -t compose_files < <(_dstack_resolve_compose_files "$DSTACK" "$selector"); then
+      for compose in "${compose_files[@]}"; do
+        compose_flags+=("-f" "$compose")
+      done
+
+      docker compose "${compose_flags[@]}" "$@" || true
       return 0
     else
       warn "DSTACK invalid, clearing"
@@ -182,8 +355,25 @@ _dcompose() {
     fi
   fi
 
-  if compose="$(_dstack_find_compose_file "$(pwd)")"; then
-    docker compose -f "$compose" "$@" || true
+  while [[ $# -gt 1 && ( "$1" == "-f" || "$1" == "--file" || "$1" == "--compose-file" ) ]]; do
+    selector+="${selector:+,}$2"
+    shift 2
+  done
+
+  if [[ -z "$selector" && -n "${DSTACK_COMPOSE_FILE:-}" ]]; then
+    selector="$DSTACK_COMPOSE_FILE"
+  fi
+
+  if [[ "$interactive_select" -eq 0 && -z "$selector" ]]; then
+    selector="1"
+  fi
+
+  if mapfile -t compose_files < <(_dstack_resolve_compose_files "$(pwd)" "$selector"); then
+    for compose in "${compose_files[@]}"; do
+      compose_flags+=("-f" "$compose")
+    done
+
+    docker compose "${compose_flags[@]}" "$@" || true
     return 0
   fi
 
@@ -323,7 +513,7 @@ EOF
 
 ## List docker compose services
 dsvc() {
-   _dcompose "$@" ps --services
+   _dcompose --no-select "$@" ps --services
 }
 
 ## Show container port mappings
@@ -365,21 +555,26 @@ dstack() {
 USAGE:
   dstack [ls]
   dstack add <name> <path>
-  dstack <stack>
+  dstack <stack> [compose-file]
+  dstack <stack> -f <compose-file>
 
 OPTIONS:
   -h, --help    Show this help message
+  -f, --file, --compose-file    Select compose file for active stack
 
 EXAMPLES:
   dstack                              # List all available stacks
   dstack ls                           # List all available stacks
   dstack add myapp ~/projects/myapp   # Register a stack
   dstack myapp                        # Set myapp as active stack context
+  dstack myapp compose.prod.yaml      # Set myapp and select a compose file
+  dstack myapp -f compose.prod.yaml   # Set myapp and select a compose file
 
 NOTES:
   - Stacks are auto-discovered from common base directories
   - Registered stacks are stored in ~/.config/dstack/registry
   - Setting a stack exports the DSTACK environment variable
+  - You can select compose files with a positional name, numeric index, or `-f`
 EOF
     return 0
   fi
@@ -387,6 +582,21 @@ EOF
   local cmd="${1:-}"
   local name="${2:-}"
   local path="${3:-}"
+  local compose_file=""
+
+  if [[ $# -ge 3 ]]; then
+    case "$2" in
+      -f|--file|--compose-file)
+        compose_file="$3"
+        ;;
+      *)
+        compose_file="$2"
+        ;;
+    esac
+  elif [[ $# -eq 2 ]]; then
+    compose_file="$2"
+  fi
+
   local REGISTRY="$HOME/.config/dstack/registry"
   local MAX_DEPTH=2
 
@@ -445,7 +655,14 @@ EOF
   }
 
   export DSTACK="$DIR"
-  ok "Docker stack set: $cmd -> $DIR"
+
+  if [[ -n "$compose_file" ]]; then
+    export DSTACK_COMPOSE_FILE="$compose_file"
+    ok "Docker stack set: $cmd -> $DIR ($compose_file)"
+  else
+    unset DSTACK_COMPOSE_FILE 2>/dev/null || true
+    ok "Docker stack set: $cmd -> $DIR"
+  fi
   return 0
 }
 
@@ -540,7 +757,7 @@ EOF
     return 0
   fi
 
-  _dcompose "$@" stop
+  _dcompose --no-select "$@" stop
 }
 
 ## Run Docker Compose commands
@@ -552,12 +769,17 @@ USAGE:
 
 OPTIONS:
   -h, --help    Show this help message
+  -f, --file    Specify compose file(s) (can be used multiple times or with comma-separated list)
 
 EXAMPLES:
-  dcompose                          # Run: up -d --build --remove-orphans in current context
-  dcompose myapp                    # Run: up -d --build --remove-orphans in 'myapp' stack
-  dcompose myapp ps                 # Run 'ps' in the 'myapp' stack
-  dcompose logs -f                  # Run 'logs -f' in current context
+  dcompose                                 # Run: up -d --build --remove-orphans in current context
+  dcompose -f compose.prod.yaml            # Use specific compose file and start services
+  dcompose down -v                         # Stop and remove containers + volumes in current context
+  dcompose myapp                           # Run: up -d --build --remove-orphans in 'myapp' stack
+  dcompose myapp -f compose.prod.yaml      # Run 'up' in the 'myapp' stack with specific compose file
+  dcompose myapp ps                        # Run 'ps' in the 'myapp' stack
+  dcompose logs -f                         # Run 'logs -f' in current context
+  dcompose -f compose.prod.yaml logs -f    # Use specific compose file and follow logs
 
 NOTES:
   - When called with no subcommand, defaults to: up -d --build --remove-orphans
@@ -575,6 +797,35 @@ EOF
     info "No subcommand given, running: up -d --build --remove-orphans"
     _dcompose "$1" up -d --build --remove-orphans || true
     return 0
+  fi
+
+  if [[ $# -gt 0 ]]; then
+    local -a remaining=("$@")
+
+    if _dstack_resolve "${remaining[0]}" >/dev/null 2>&1; then
+      remaining=("${remaining[@]:1}")
+    fi
+
+    while ((${#remaining[@]} > 0)); do
+      case "${remaining[0]}" in
+        -f|--file|--compose-file)
+          ((${#remaining[@]} >= 2)) || {
+            err "Missing compose file after ${remaining[0]}"
+            return 0
+          }
+          remaining=("${remaining[@]:2}")
+          ;;
+        *)
+          break
+          ;;
+      esac
+    done
+
+    if ((${#remaining[@]} == 0)); then
+      info "No subcommand given, running: up -d --build --remove-orphans"
+      _dcompose "$@" up -d --build --remove-orphans || true
+      return 0
+    fi
   fi
 
   if [[ $# -gt 1 ]]; then
@@ -610,7 +861,7 @@ EOF
     return 0
   fi
 
-  _dcompose "$@" down
+  _dcompose --no-select "$@" down
 }
 
 ## Stop and remove containers + volumes (destructive)
@@ -636,7 +887,7 @@ EOF
 
   warn "This will remove containers + volumes"
   confirm "Continue?" || return 0
-  _dcompose "$@" down -v || true
+  _dcompose --no-select "$@" down -v || true
   return 0
 }
 
@@ -671,9 +922,29 @@ EOF
     return 0
   fi
 
+  local dir
+  local selector="${DSTACK_COMPOSE_FILE:-}"
+  local -a compose_flags=()
+
+  if [[ $# -eq 1 ]]; then
+    dir="$(_dstack_resolve "$1")" || {
+      err "Stack not found: $1"
+      return 0
+    }
+  elif [[ -n "${DSTACK:-}" ]]; then
+    dir="$DSTACK"
+  else
+    dir="$(pwd)"
+  fi
+
+  mapfile -t compose_flags < <(_dstack_resolve_compose_flags "$dir" "$selector") || {
+    err "No Docker Compose file found in $dir"
+    return 0
+  }
+
   info "Recreating docker stack with volume removal"
-  _dcompose "$@" down -v || true
-  _dcompose "$@" up -d || true
+  docker compose "${compose_flags[@]}" down -v || true
+  docker compose "${compose_flags[@]}" up -d || true
   ok "Stack recreated"
   return 0
 }
@@ -706,9 +977,29 @@ EOF
     return 0
   fi
 
+  local dir
+  local selector="${DSTACK_COMPOSE_FILE:-}"
+  local -a compose_flags=()
+
+  if [[ $# -eq 1 ]]; then
+    dir="$(_dstack_resolve "$1")" || {
+      err "Stack not found: $1"
+      return 0
+    }
+  elif [[ -n "${DSTACK:-}" ]]; then
+    dir="$DSTACK"
+  else
+    dir="$(pwd)"
+  fi
+
+  mapfile -t compose_flags < <(_dstack_resolve_compose_flags "$dir" "$selector") || {
+    err "No Docker Compose file found in $dir"
+    return 0
+  }
+
   info "Restarting docker stack"
-  _dcompose "$@" down || true
-  _dcompose "$@" up -d || true
+  docker compose "${compose_flags[@]}" down || true
+  docker compose "${compose_flags[@]}" up -d || true
   ok "Stack restarted"
   return 0
 }
@@ -746,16 +1037,16 @@ EOF
     local stack="$1"
     local service="$2"
     info "Restarting service '$service' in stack '$stack'"
-    _dcompose "$stack" restart "$service"
+    _dcompose --no-select "$stack" restart "$service"
   elif [[ $# -eq 1 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
     info "Restarting all services in stack '$1'"
     _dcompose "$1" restart
   elif [[ $# -eq 1 ]]; then
     info "Restarting service '$1'"
-    _dcompose restart "$1"
+    _dcompose --no-select restart "$1"
   else
     info "Restarting all services"
-    _dcompose restart
+    _dcompose --no-select restart
   fi
 
   ok "Done"
@@ -791,7 +1082,7 @@ EOF
   warn "This will remove the CURRENT compose stack and prune UNUSED Docker resources system-wide"
   warn "Images and volumes still in use will NOT be removed"
   confirm "Continue?" || return 0
-  _dcompose "$@" down -v || true
+  _dcompose --no-select "$@" down -v || true
   docker system prune -f || true
   ok "Docker stack purged and unused resources pruned"
   return 0
@@ -831,7 +1122,7 @@ EOF
     shift
   fi
 
-  _dcompose "$@" logs -f --tail="$lines"
+  _dcompose --no-select "$@" logs -f --tail="$lines"
 }
 
 ## Follow logs for a single service with optional line count (Ctrl+C to exit)
@@ -862,7 +1153,7 @@ EOF
   local service="${!#}"
   local args=("${@:1:$#-1}")
 
-  _dcompose "${args[@]}" logs -f --tail=100 "$service"
+  _dcompose --no-select "${args[@]}" logs -f --tail=100 "$service"
 }
 
 ## Show last logs for all services (paged)
@@ -894,7 +1185,7 @@ EOF
     shift
   fi
 
-  _dcompose "$@" logs --tail="$lines" | less
+  _dcompose --no-select "$@" logs --tail="$lines" | less
 }
 
 ## Show last logs for a single service (paged)
@@ -934,7 +1225,7 @@ EOF
 
   local args=("${@:1:$#-2}")
 
-  _dcompose "${args[@]}" logs --tail="$lines" "$service" | less
+  _dcompose --no-select "${args[@]}" logs --tail="$lines" "$service" | less
 }
 
 ## Live container resource usage (Ctrl+C to exit)
@@ -1000,7 +1291,7 @@ EOF
   local service="${!#}"
   local args=("${@:1:$#-1}")
 
-  _dcompose "${args[@]}" exec "$service" sh
+  _dcompose --no-select "${args[@]}" exec "$service" sh
 
 }
 
@@ -1187,8 +1478,28 @@ EOF
     return 0
   fi
 
-  _dcompose "$@" pull || true
-  _dcompose "$@" up -d || true
+  local dir
+  local selector="${DSTACK_COMPOSE_FILE:-}"
+  local -a compose_flags=()
+
+  if [[ $# -eq 1 ]]; then
+    dir="$(_dstack_resolve "$1")" || {
+      err "Stack not found: $1"
+      return 0
+    }
+  elif [[ -n "${DSTACK:-}" ]]; then
+    dir="$DSTACK"
+  else
+    dir="$(pwd)"
+  fi
+
+  mapfile -t compose_flags < <(_dstack_resolve_compose_flags "$dir" "$selector") || {
+    err "No Docker Compose file found in $dir"
+    return 0
+  }
+
+  docker compose "${compose_flags[@]}" pull || true
+  docker compose "${compose_flags[@]}" up -d || true
   return 0
 }
 
@@ -1209,12 +1520,35 @@ EOF
     return 0
   fi
 
-  if [ -z "$1" ]; then
+  if [[ $# -lt 1 || $# -gt 2 ]]; then
     echo "Usage: drebuild [stack] <service-name>"
     return 0
   fi
-  _dcompose "$@" build "$1" 2>/dev/null || true
-  _dcompose "$@" up -d "$1" 2>/dev/null || true
+
+  local dir
+  local service
+  local selector="${DSTACK_COMPOSE_FILE:-}"
+  local -a compose_flags=()
+
+  if [[ $# -eq 2 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
+    dir="$(_dstack_resolve "$1")"
+    service="$2"
+  else
+    service="$1"
+    if [[ -n "${DSTACK:-}" ]]; then
+      dir="$DSTACK"
+    else
+      dir="$(pwd)"
+    fi
+  fi
+
+  mapfile -t compose_flags < <(_dstack_resolve_compose_flags "$dir" "$selector") || {
+    err "No Docker Compose file found in $dir"
+    return 0
+  }
+
+  docker compose "${compose_flags[@]}" build "$service" 2>/dev/null || true
+  docker compose "${compose_flags[@]}" up -d "$service" 2>/dev/null || true
   return 0
 }
 
@@ -1241,8 +1575,28 @@ EOF
     return 0
   fi
 
-  _dcompose "$@" build --no-cache 2>/dev/null || true
-  _dcompose "$@" up -d 2>/dev/null || true
+  local dir
+  local selector="${DSTACK_COMPOSE_FILE:-}"
+  local -a compose_flags=()
+
+  if [[ $# -eq 1 ]]; then
+    dir="$(_dstack_resolve "$1")" || {
+      err "Stack not found: $1"
+      return 0
+    }
+  elif [[ -n "${DSTACK:-}" ]]; then
+    dir="$DSTACK"
+  else
+    dir="$(pwd)"
+  fi
+
+  mapfile -t compose_flags < <(_dstack_resolve_compose_flags "$dir" "$selector") || {
+    err "No Docker Compose file found in $dir"
+    return 0
+  }
+
+  docker compose "${compose_flags[@]}" build --no-cache 2>/dev/null || true
+  docker compose "${compose_flags[@]}" up -d 2>/dev/null || true
   return 0
 }
 
@@ -1308,6 +1662,6 @@ EOF
     return 0
   fi
 
-  _dcompose "$@" config || true
+  _dcompose --no-select "$@" config || true
   return 0
 }
