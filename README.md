@@ -4,7 +4,7 @@
 
 **Docker Compose stack management**
 
-`DStack` is a small Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
+`DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
 No more constantly changing directories just to run `docker compose up` or `down`.
 
@@ -20,7 +20,7 @@ DStack is for developers and operators who:
 - Work on servers, over SSH, or in homelabs
 - Forget where compose files live
 - Are tired of `cd` + `docker compose` loops
-- Prefer small, inspectable shell tools over GUIs
+- Prefer inspectable shell tools over GUIs
 
 ---
 
