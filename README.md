@@ -230,13 +230,6 @@ By default, DStack scans:
 Any directory up to one level deep that contains a supported Docker Compose file is treated as a stack
 (for example `media/jellyfin/`).
 
-Supported filenames:
-
-- `docker-compose.yml`
-- `docker-compose.yaml`
-- `compose.yml`
-- `compose.yaml`
-
 These locations were chosen because they are widely used across Linux, macOS, and WSL environments
 
 Discovery is limited to shallow nesting (one level below each base directory) to keep behavior fast and predictable.
