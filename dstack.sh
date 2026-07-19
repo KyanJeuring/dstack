@@ -12,7 +12,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   IFS=$'\n\t'
 fi
 
-DSTACK_VERSION="v1.10.1"
+DSTACK_VERSION="v1.10.2"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -50,7 +50,7 @@ err()  { _log_emit ERROR "$@"; }
 
 ### Confirmation prompt (internal)
 confirm() {
-  read -rp "$1 [y/N]: " ans
+  read -rp "$1 [y/n]: " ans
   [[ "$ans" =~ ^[Yy]$ ]]
 }
 
