@@ -37,28 +37,19 @@ DStack is for developers and operators who:
 
 ---
 
+
 ## Platform availability
 
 > [!IMPORTANT]
-> DStack requires **Bash 4 or newer**.
+> Requires **Bash 4+** and a working `git` installation.
 
-### Linux
-
-DStack is fully supported on Linux distributions.
-
-### Windows
-
-DStack is available on Windows via **WSL** or **Git Bash**.
+- Linux: fully supported  
+- macOS: supported  
+- Windows: via **WSL** or **Git Bash**
 
 > [!WARNING]
-> PowerShell and CMD are not supported.
-
-### macOS
-
-DStack is available on macOS.
-
-> [!TIP]
-> While DStack is primarily designed for the `bash` shell, it also works with other shells such as `zsh` and `fish`.
+> SDtack currently only supports Bash.
+> Zsh, Fish, PowerShell, and CMD are not supported.
 
 ---
 
@@ -78,12 +69,12 @@ curl -fsSL https://kyanjeuring.com/scripts/install-dstack | DSTACK_VERSION=vx.y.
 
 This will:
 - Install `dstack` into `~/.local/share/dstack`
-- Automatically source it in your shell (`.bashrc` / `.zshrc`)
+- Automatically source it in your shell`.bashrc`
 
 Restart your shell or run:
 
 ```bash
-source ~/.bashrc   # or ~/.zshrc
+source ~/.bashrc
 ```
 
 ### Install via git clone
@@ -99,7 +90,6 @@ Then source it into your shell config:
 
 ```bash
 echo 'source ~/.local/share/dstack/dstack.sh' >> ~/.bashrc
-# or ~/.zshrc
 ```
 
 ---
@@ -331,7 +321,7 @@ Advanced users can override the discovery locations without editing the script b
 Example:
 
 
-Add this to your shell config (.bashrc, .zshrc, etc.) to make it permanent and reload the shell:
+Add this to your shell config `.bashrc`, to make it permanent and reload the shell:
 ```bash
 export DSTACK_BASES="/your/custom/path1 /your/custom/path2"
 ```
