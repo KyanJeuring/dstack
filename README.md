@@ -44,11 +44,11 @@ DStack is for developers and operators who:
 > Requires **Bash 4+** and a working `git` installation.
 
 - Linux: fully supported  
-- macOS: supported  
+- macOS: limited support; requires Bash 4+ and some commands may require GNU utilities 
 - Windows: via **WSL** or **Git Bash**
 
 > [!WARNING]
-> SDtack currently only supports Bash.
+> DStack currently only supports Bash.
 > Zsh, Fish, PowerShell, and CMD are not supported.
 
 ---
