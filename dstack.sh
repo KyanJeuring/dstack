@@ -12,7 +12,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   IFS=$'\n\t'
 fi
 
-DSTACK_VERSION="v1.10.2"
+DSTACK_VERSION="v1.11.0"
 
 # ==================================================
 # Logging and confirmation helpers (internal)
@@ -1284,42 +1284,47 @@ EOF
 
 }
 
-## Run one-off commands in a service
+## Run a one-off container for a service
 drun() {
   if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat <<'EOF'
 USAGE:
-  drun [stack] <service> <command>
+  drun [stack] <service> [command...]
 
 OPTIONS:
   -h, --help    Show this help message
 
 EXAMPLES:
-  drun app bash                     # Run bash in 'app' in current context
-  drun myapp app bash               # Run bash in 'app' in the 'myapp' stack
-  drun app "ls -la /data"           # Run 'ls -la /data' in 'app' in current context
+  drun app                            # Run 'app' using its configured or image default command.
+  drun app sh                         # Open a shell in 'app'.
+  drun app ls -la /data               # Run a command with arguments in 'app'.
+  drun app sh -c 'ls -la | grep txt'  # Run a shell command using pipes or other shell syntax.
+  drun myapp app ls -la /data         # Run a command in 'app' in the 'myapp' stack.
 
 NOTES:
-  - Container is removed after the command exits (--rm)
+  - If no command is given, Docker Compose uses the service's configured command or the image's default command.
+  - Commands may contain any number of arguments.
+  - Use `sh -c` for shell syntax such as pipes, redirects, &&, or ||.
+  - The container is removed after the command exits (--rm).
 EOF
     return 0
   fi
 
-  if [[ $# -lt 2 ]]; then
-    err "Usage: drun [stack] <service> <command>"
-    return 0
+  if [[ $# -lt 1 ]]; then
+    err "Usage: drun [stack] <service> [command...]"
+    return 1
   fi
 
   local service
   local args=()
 
-  if _dstack_resolve "$1" >/dev/null 2>&1; then
+  if [[ $# -ge 2 ]] && _dstack_resolve "$1" >/dev/null 2>&1; then
     args+=("$1")
     service="$2"
     shift 2
   else
     service="$1"
-    shift 1
+    shift
   fi
 
   _dcompose "${args[@]}" run --rm "$service" "$@"
