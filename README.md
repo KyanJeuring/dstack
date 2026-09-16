@@ -365,22 +365,27 @@ Then remove the `dstack` source line from your shell config.
 
 ## Testing
 
-DStack uses a dependency-free Bash characterization-test harness. The current
-suite validates the test infrastructure itself: isolated temporary
-environments, exact stdout/stderr and argument capture, fixture helpers, child
-Bash execution, and the fake Docker safety boundary. DStack behavior
-characterization cases will be added separately.
+DStack uses a dependency-free Bash characterization-test harness. The suite
+validates its own infrastructure and records selected current DStack behavior
+in isolated child shells. Current behavioral coverage is limited to loading,
+sourcing, version reporting, function availability, and caller shell state.
 
-Run the complete foundation suite from the repository root:
+Run the complete characterization suite from the repository root:
 
 ```bash
 bash tests/characterization/run.sh
 ```
 
-The explicit harness command runs the same current test group:
+Run only the test-infrastructure self-tests:
 
 ```bash
 bash tests/characterization/run.sh harness
+```
+
+Run only the DStack loading and shell-state characterization cases:
+
+```bash
+bash tests/characterization/run.sh load
 ```
 
 Run one case by its TAP name:

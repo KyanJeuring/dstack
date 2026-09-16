@@ -39,23 +39,75 @@ jobs:
         run: |
           choco install shellcheck -y
 
+      # Runtime selection
+      - name: Verify Bash 4+ runtime
+        shell: bash
+        run: |
+          resolved_bash="$(command -v bash)"
+          printf 'Resolved Bash: %s\n' "$resolved_bash"
+          "$resolved_bash" --version
+          printf 'Executing Bash: %s\n' "$BASH"
+          printf 'Executing Bash major version: %s\n' "${BASH_VERSINFO[0]}"
+          if ((BASH_VERSINFO[0] < 4)); then
+            printf 'The executing shell must be Bash 4 or newer.\n' >&2
+            exit 1
+          fi
+          if ! "$resolved_bash" -c '((BASH_VERSINFO[0] >= 4))'; then
+            printf 'The Bash resolved through PATH must be version 4 or newer.\n' >&2
+            exit 1
+          fi
+
       # Lint
       - name: Lint with ShellCheck
         shell: bash
-        run: shellcheck -x dstack.sh
+        run: |
+          # run.sh carries source annotations for every case and helper.
+          shellcheck -x \
+            dstack.sh \
+            tests/characterization/run.sh \
+            tests/characterization/helpers/child-driver.bash \
+            tests/characterization/stubs/docker \
+            tests/characterization/stubs/docker-deny
 
       # Syntax check
       - name: Syntax check
         shell: bash
-        run: bash -n dstack.sh
+        run: |
+          bash_files=(
+            dstack.sh
+            tests/characterization/run.sh
+            tests/characterization/cases/*.bash
+            tests/characterization/helpers/*.bash
+            tests/characterization/stubs/docker
+            tests/characterization/stubs/docker-deny
+          )
+          for bash_file in "${bash_files[@]}"; do
+            printf 'Checking Bash syntax: %s\n' "$bash_file"
+            bash -n "$bash_file"
+          done
 
       # Executable check (skip Windows)
-      - name: Ensure executable
+      - name: Ensure executable scripts
         if: runner.os != 'Windows'
         shell: bash
-        run: test -x dstack.sh
+        run: |
+          test -x dstack.sh
+          test -x tests/characterization/run.sh
+          test -x tests/characterization/stubs/docker
+          test -x tests/characterization/stubs/docker-deny
 
-      # Runtime check
-      - name: Run version command
+      # Sourced runtime check
+      - name: Verify sourced version command
         shell: bash
-        run: ./dstack.sh dversion
+        run: |
+          source ./dstack.sh
+          expected="DStack $DSTACK_VERSION"
+          actual="$(dversion)"
+          printf 'Expected version output: %s\n' "$expected"
+          printf 'Actual version output:   %s\n' "$actual"
+          [[ "$actual" == "$expected" ]]
+
+      # Non-interactive characterization
+      - name: Run characterization suite
+        shell: bash
+        run: bash tests/characterization/run.sh all

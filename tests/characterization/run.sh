@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 
 set -u
 
@@ -15,11 +16,19 @@ if [[ "${DSTACK_TEST_INTERNAL_BROKEN_DOCKER_STUB:-0}" == "1" ]]; then
   CHARACTERIZATION_STUB_DOCKER="$CHARACTERIZATION_ROOT/stubs/intentionally-missing-docker"
 fi
 
+# These paths are computed at runtime; source annotations let ShellCheck inspect
+# the complete runner without changing how the suite locates its files.
+# shellcheck source=helpers/assertions.bash
 source "$CHARACTERIZATION_ROOT/helpers/assertions.bash"
+# shellcheck source=helpers/capture.bash
 source "$CHARACTERIZATION_ROOT/helpers/capture.bash"
+# shellcheck source=helpers/docker-records.bash
 source "$CHARACTERIZATION_ROOT/helpers/docker-records.bash"
+# shellcheck source=helpers/environment.bash
 source "$CHARACTERIZATION_ROOT/helpers/environment.bash"
+# shellcheck source=helpers/fixtures.bash
 source "$CHARACTERIZATION_ROOT/helpers/fixtures.bash"
+# shellcheck source=helpers/child-bash.bash
 source "$CHARACTERIZATION_ROOT/helpers/child-bash.bash"
 
 TEST_CASE_NAMES=()
@@ -36,13 +45,17 @@ register_case() {
   TEST_CASE_FUNCTIONS+=("$function_name")
 }
 
+# shellcheck source=cases/harness.bash
 source "$CHARACTERIZATION_ROOT/cases/harness.bash"
+# shellcheck source=cases/load.bash
+source "$CHARACTERIZATION_ROOT/cases/load.bash"
 
 _runner_usage() {
   cat <<'EOF'
 Usage:
-  bash tests/characterization/run.sh [--debug]
+  bash tests/characterization/run.sh [--debug] [all|harness|load]
   bash tests/characterization/run.sh [--debug] harness
+  bash tests/characterization/run.sh [--debug] load
   bash tests/characterization/run.sh [--debug] case <case-name>
 
 --debug preserves failed case artifacts. Successful case state is always removed.
@@ -55,20 +68,29 @@ if [[ "${1:-}" == "--debug" ]]; then
   shift
 fi
 
-selection="${1:-harness}"
+selection="${1:-all}"
 if [[ $# -gt 0 ]]; then
   shift
 fi
 
 SELECTED_CASE_INDEXES=()
 case "$selection" in
-  harness)
+  all)
     if (($#)); then
       _runner_usage >&2
       exit 2
     fi
     for index in "${!TEST_CASE_NAMES[@]}"; do
-      [[ "${TEST_CASE_GROUPS[$index]}" == "harness" ]] && SELECTED_CASE_INDEXES+=("$index")
+      [[ "${TEST_CASE_GROUPS[$index]}" != "internal" ]] && SELECTED_CASE_INDEXES+=("$index")
+    done
+    ;;
+  harness|load)
+    if (($#)); then
+      _runner_usage >&2
+      exit 2
+    fi
+    for index in "${!TEST_CASE_NAMES[@]}"; do
+      [[ "${TEST_CASE_GROUPS[$index]}" == "$selection" ]] && SELECTED_CASE_INDEXES+=("$index")
     done
     ;;
   case)
