@@ -129,6 +129,9 @@ RUNNER_SUITE_ROOT="$(mktemp -d "$RUNNER_TEMP_BASE/dstack-characterization.XXXXXX
 : >"$RUNNER_SUITE_ROOT/.dstack-characterization-suite"
 RUNNER_PRESERVE_SUITE=0
 
+# Invoked indirectly by the EXIT trap; ShellCheck versions report this as
+# SC2317 or SC2329 because they do not recognize the trap callback.
+# shellcheck disable=SC2317,SC2329
 _runner_exit_cleanup() {
   if ((RUNNER_PRESERVE_SUITE == 0)) && [[ -d "$RUNNER_SUITE_ROOT" ]]; then
     cleanup_suite_root "$RUNNER_SUITE_ROOT" "$RUNNER_TEMP_BASE" || true

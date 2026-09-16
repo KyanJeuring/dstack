@@ -5,6 +5,9 @@ state_request="$2"
 state_output="$3"
 shift 3
 
+# The characterization harness selects the per-case probe script at runtime,
+# so there is no fixed source path for ShellCheck to follow.
+# shellcheck disable=SC1090
 source "$child_script"
 
 if ! declare -F characterization_child_main >/dev/null; then
