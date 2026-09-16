@@ -75,6 +75,7 @@ run_child_bash() {
   _append_child_env_if_set DSTACK
   _append_child_env_if_set DSTACK_COMPOSE_FILE
   _append_child_env_if_set DSTACK_COMPOSE_FILES
+  _append_child_env_if_set XDG_CONFIG_HOME
 
   case "${OSTYPE:-}" in
     msys*|cygwin*)

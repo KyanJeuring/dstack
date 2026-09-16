@@ -30,6 +30,8 @@ source "$CHARACTERIZATION_ROOT/helpers/environment.bash"
 source "$CHARACTERIZATION_ROOT/helpers/fixtures.bash"
 # shellcheck source=helpers/child-bash.bash
 source "$CHARACTERIZATION_ROOT/helpers/child-bash.bash"
+# shellcheck source=helpers/dstack-invoke.bash
+source "$CHARACTERIZATION_ROOT/helpers/dstack-invoke.bash"
 
 TEST_CASE_NAMES=()
 TEST_CASE_GROUPS=()
@@ -49,13 +51,16 @@ register_case() {
 source "$CHARACTERIZATION_ROOT/cases/harness.bash"
 # shellcheck source=cases/load.bash
 source "$CHARACTERIZATION_ROOT/cases/load.bash"
+# shellcheck source=cases/registry.bash
+source "$CHARACTERIZATION_ROOT/cases/registry.bash"
 
 _runner_usage() {
   cat <<'EOF'
 Usage:
-  bash tests/characterization/run.sh [--debug] [all|harness|load]
+  bash tests/characterization/run.sh [--debug] [all|harness|load|registry]
   bash tests/characterization/run.sh [--debug] harness
   bash tests/characterization/run.sh [--debug] load
+  bash tests/characterization/run.sh [--debug] registry
   bash tests/characterization/run.sh [--debug] case <case-name>
 
 --debug preserves failed case artifacts. Successful case state is always removed.
@@ -84,7 +89,7 @@ case "$selection" in
       [[ "${TEST_CASE_GROUPS[$index]}" != "internal" ]] && SELECTED_CASE_INDEXES+=("$index")
     done
     ;;
-  harness|load)
+  harness|load|registry)
     if (($#)); then
       _runner_usage >&2
       exit 2
