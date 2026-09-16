@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+printf 'fake docker safety error: primary fake is unavailable; refusing fallback\n' >&2
+exit 125

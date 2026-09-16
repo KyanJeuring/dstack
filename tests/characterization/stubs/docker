@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+set -u
+
+_fake_docker_error() {
+  printf 'fake docker safety error: %s\n' "$1" >&2
+  exit 125
+}
+
+control="${DSTACK_TEST_DOCKER_CONTROL:-}"
+provided_guard="${DSTACK_TEST_DOCKER_GUARD:-}"
+
+[[ -n "$control" ]] || _fake_docker_error "control directory is not set"
+[[ -d "$control" ]] || _fake_docker_error "control directory does not exist"
+[[ -f "$control/.dstack-fake-docker-control" ]] || _fake_docker_error "control sentinel is missing"
+[[ -f "$control/guard" ]] || _fake_docker_error "guard file is missing"
+[[ -n "$provided_guard" ]] || _fake_docker_error "guard is not set"
+
+expected_guard=""
+IFS= read -r expected_guard <"$control/guard" || [[ -n "$expected_guard" ]]
+[[ "$provided_guard" == "$expected_guard" ]] || _fake_docker_error "guard does not match"
+
+mkdir -p "$control/calls" "$control/responses"
+
+call_number=1
+call_dir=""
+while ((call_number <= 999999)); do
+  printf -v call_id '%06d' "$call_number"
+  call_dir="$control/calls/$call_id"
+  if mkdir "$call_dir" 2>/dev/null; then
+    break
+  fi
+  call_number=$((call_number + 1))
+done
+
+((call_number <= 999999)) || _fake_docker_error "call sequence exhausted"
+
+printf '%s\n' "$call_number" >"$call_dir/sequence"
+printf '%s\n' "$#" >"$call_dir/argc"
+: >"$call_dir/argv.nul"
+for argument in "$@"; do
+  printf '%s\0' "$argument" >>"$call_dir/argv.nul"
+done
+
+pwd -P >"$call_dir/cwd"
+
+: >"$call_dir/environment.nul"
+environment_names=(
+  HOME
+  USER
+  PATH
+  PWD
+  DSTACK
+  DSTACK_COMPOSE_FILE
+  DSTACK_COMPOSE_FILES
+  DSTACK_BASES
+  DOCKER_CONFIG
+  DOCKER_HOST
+  LC_ALL
+  TERM
+  DSTACK_TEST_DOCKER_CONTROL
+  DSTACK_TEST_DOCKER_GUARD
+)
+
+for environment_name in "${environment_names[@]}"; do
+  if declare -p "$environment_name" >/dev/null 2>&1; then
+    printf '%s\0set\0%s\0' "$environment_name" "${!environment_name}" >>"$call_dir/environment.nul"
+  else
+    printf '%s\0unset\0\0' "$environment_name" >>"$call_dir/environment.nul"
+  fi
+done
+
+: >"$call_dir/compose-files.nul"
+expect_compose_file=0
+for argument in "$@"; do
+  if ((expect_compose_file)); then
+    printf '%s\0' "$argument" >>"$call_dir/compose-files.nul"
+    expect_compose_file=0
+    continue
+  fi
+
+  case "$argument" in
+    -f|--file|--compose-file)
+      expect_compose_file=1
+      ;;
+    --file=*|--compose-file=*|-f=*)
+      printf '%s\0' "${argument#*=}" >>"$call_dir/compose-files.nul"
+      ;;
+  esac
+done
+
+if [[ "${DSTACK_FAKE_CAPTURE_STDIN:-0}" == "1" ]]; then
+  cat >"$call_dir/stdin"
+fi
+
+: >"$call_dir/complete"
+
+response_dir="$control/responses/$call_id"
+if [[ -f "$response_dir/stdout" ]]; then
+  cat "$response_dir/stdout"
+fi
+if [[ -f "$response_dir/stderr" ]]; then
+  cat "$response_dir/stderr" >&2
+fi
+
+response_status=0
+if [[ -f "$response_dir/status" ]]; then
+  IFS= read -r response_status <"$response_dir/status" || true
+fi
+
+if [[ ! "$response_status" =~ ^[0-9]+$ ]] || ((10#$response_status > 255)); then
+  _fake_docker_error "invalid configured response status"
+fi
+
+exit "$((10#$response_status))"
