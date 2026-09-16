@@ -88,21 +88,21 @@ _registry_register_valid_stack() {
 }
 
 _registry_register_symlink_uses_physical_path_when_supported() {
-  local target
+  local canonical
   local link="$CASE_PROJECTS/registered-link"
 
   fixture_create_compose_project registered-target compose.yml 'services: {}'
-  target="$(_registry_physical_path "$FIXTURE_PROJECT")"
   if ! ln -s "$FIXTURE_PROJECT" "$link" 2>/dev/null; then
     # Windows runners may not permit symlink creation. Phase 7 records the
     # platform capability explicitly; supported hosts exercise pwd -P here.
     assert_call_count 0
     return 0
   fi
+  canonical="$(_registry_physical_path "$link")"
 
   _registry_run symlink dstack add linked "$link"
   _registry_assert_success "symlink registration"
-  assert_text_file "$CASE_REGISTRY" "linked=$target"$'\n' "physical symlink target"
+  assert_text_file "$CASE_REGISTRY" "linked=$canonical"$'\n' "pwd -P symlink result"
 }
 
 _registry_duplicate_registration_replaces_one_entry() {
