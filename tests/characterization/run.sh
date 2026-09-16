@@ -53,14 +53,17 @@ source "$CHARACTERIZATION_ROOT/cases/harness.bash"
 source "$CHARACTERIZATION_ROOT/cases/load.bash"
 # shellcheck source=cases/registry.bash
 source "$CHARACTERIZATION_ROOT/cases/registry.bash"
+# shellcheck source=cases/resolution.bash
+source "$CHARACTERIZATION_ROOT/cases/resolution.bash"
 
 _runner_usage() {
   cat <<'EOF'
 Usage:
-  bash tests/characterization/run.sh [--debug] [all|harness|load|registry]
+  bash tests/characterization/run.sh [--debug] [all|harness|load|registry|resolution]
   bash tests/characterization/run.sh [--debug] harness
   bash tests/characterization/run.sh [--debug] load
   bash tests/characterization/run.sh [--debug] registry
+  bash tests/characterization/run.sh [--debug] resolution
   bash tests/characterization/run.sh [--debug] case <case-name>
 
 --debug preserves failed case artifacts. Successful case state is always removed.
@@ -89,7 +92,7 @@ case "$selection" in
       [[ "${TEST_CASE_GROUPS[$index]}" != "internal" ]] && SELECTED_CASE_INDEXES+=("$index")
     done
     ;;
-  harness|load|registry)
+  harness|load|registry|resolution)
     if (($#)); then
       _runner_usage >&2
       exit 2
