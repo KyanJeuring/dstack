@@ -71,11 +71,13 @@ source "$CHARACTERIZATION_ROOT/cases/state.bash"
 source "$CHARACTERIZATION_ROOT/cases/multi-step.bash"
 # shellcheck source=cases/direct-docker.bash
 source "$CHARACTERIZATION_ROOT/cases/direct-docker.bash"
+# shellcheck source=cases/platform.bash
+source "$CHARACTERIZATION_ROOT/cases/platform.bash"
 
 _runner_usage() {
   cat <<'EOF'
 Usage:
-  bash tests/characterization/run.sh [--debug] [all|harness|load|registry|resolution|compose|forwarding|status|multi]
+  bash tests/characterization/run.sh [--debug] [all|harness|load|registry|resolution|compose|forwarding|status|multi|platform]
   bash tests/characterization/run.sh [--debug] harness
   bash tests/characterization/run.sh [--debug] load
   bash tests/characterization/run.sh [--debug] registry
@@ -84,6 +86,7 @@ Usage:
   bash tests/characterization/run.sh [--debug] forwarding
   bash tests/characterization/run.sh [--debug] status
   bash tests/characterization/run.sh [--debug] multi
+  bash tests/characterization/run.sh [--debug] platform
   bash tests/characterization/run.sh [--debug] case <case-name>
 
 --debug preserves failed case artifacts. Successful case state is always removed.
@@ -112,7 +115,7 @@ case "$selection" in
       [[ "${TEST_CASE_GROUPS[$index]}" != "internal" ]] && SELECTED_CASE_INDEXES+=("$index")
     done
     ;;
-  harness|load|registry|resolution|compose|forwarding|status|multi)
+  harness|load|registry|resolution|compose|forwarding|status|multi|platform)
     if (($#)); then
       _runner_usage >&2
       exit 2
