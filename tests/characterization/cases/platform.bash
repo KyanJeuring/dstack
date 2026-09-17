@@ -115,7 +115,7 @@ _platform_discovery_follows_host_find_depth_support() {
   assert_call_count 0
 }
 
-_platform_xargs_empty_input_invokes_stop() {
+_platform_xargs_empty_input_is_platform_specific() {
   _status_configure_response 1 0 ""
   set_child_state_vars
   run_dstack_function "$CASE_CAPTURE_DIR/xargs-empty" dstopall
@@ -123,9 +123,18 @@ _platform_xargs_empty_input_invokes_stop() {
   assert_status 0 "$CAPTURE_STATUS" "empty dstopall status"
   assert_file_empty "$CAPTURE_STDOUT" "empty dstopall stdout"
   assert_file_empty "$CAPTURE_STDERR" "empty dstopall stderr"
-  assert_call_count 2
   assert_argv 1 ps -q
-  assert_argv 2 stop
+  case "${OSTYPE:-}" in
+    darwin*)
+      # macOS xargs does not run the command when its input is empty.
+      assert_call_count 1
+      ;;
+    *)
+      # GNU xargs, including Git Bash's build, runs it once with no arguments.
+      assert_call_count 2
+      assert_argv 2 stop
+      ;;
+  esac
 }
 
 _platform_fake_docker_records_physical_space_cwd() {
@@ -163,6 +172,6 @@ register_case platform platform::runtime_external_utilities_resolve _platform_ru
 register_case platform platform::dirname_accepts_double_dash _platform_dirname_accepts_double_dash
 register_case platform platform::column_accepts_current_format_flags _platform_column_accepts_dstack_flags
 register_case platform platform::auto_discovery_reflects_host_find_depth_support _platform_discovery_follows_host_find_depth_support
-register_case platform platform::empty_xargs_input_still_invokes_docker_stop _platform_xargs_empty_input_invokes_stop
+register_case platform platform::empty_xargs_input_behavior_is_platform_specific _platform_xargs_empty_input_is_platform_specific
 register_case platform platform::fake_docker_records_physical_space_cwd _platform_fake_docker_records_physical_space_cwd
 register_case platform platform::git_bash_uses_posix_style_case_root_when_applicable _platform_git_bash_uses_posix_style_case_root
