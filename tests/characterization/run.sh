@@ -61,16 +61,19 @@ source "$CHARACTERIZATION_ROOT/cases/compose-discovery.bash"
 source "$CHARACTERIZATION_ROOT/cases/compose-selectors.bash"
 # shellcheck source=cases/compose-precedence.bash
 source "$CHARACTERIZATION_ROOT/cases/compose-precedence.bash"
+# shellcheck source=cases/forwarding.bash
+source "$CHARACTERIZATION_ROOT/cases/forwarding.bash"
 
 _runner_usage() {
   cat <<'EOF'
 Usage:
-  bash tests/characterization/run.sh [--debug] [all|harness|load|registry|resolution|compose]
+  bash tests/characterization/run.sh [--debug] [all|harness|load|registry|resolution|compose|forwarding]
   bash tests/characterization/run.sh [--debug] harness
   bash tests/characterization/run.sh [--debug] load
   bash tests/characterization/run.sh [--debug] registry
   bash tests/characterization/run.sh [--debug] resolution
   bash tests/characterization/run.sh [--debug] compose
+  bash tests/characterization/run.sh [--debug] forwarding
   bash tests/characterization/run.sh [--debug] case <case-name>
 
 --debug preserves failed case artifacts. Successful case state is always removed.
@@ -99,7 +102,7 @@ case "$selection" in
       [[ "${TEST_CASE_GROUPS[$index]}" != "internal" ]] && SELECTED_CASE_INDEXES+=("$index")
     done
     ;;
-  harness|load|registry|resolution|compose)
+  harness|load|registry|resolution|compose|forwarding)
     if (($#)); then
       _runner_usage >&2
       exit 2
