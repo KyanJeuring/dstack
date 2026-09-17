@@ -143,6 +143,38 @@ _status_eof_cancels_confirmation() {
   assert_call_count 0
 }
 
+_status_non_tty_confirmation_input_matrix() {
+  local input_file="$CASE_CAPTURE_DIR/confirmation.input"
+  local label
+  local input
+  local expected_calls
+  local -a labels=(lowercase uppercase lowercase-no uppercase-no word blank eof)
+  local -a inputs=($'y\n' $'Y\n' $'n\n' $'N\n' $'yes\n' $'\n' '')
+  local -a calls=(1 1 0 0 0 0 0)
+  local index
+
+  _forward_prepare_local
+  for index in "${!labels[@]}"; do
+    label="${labels[$index]}"
+    input="${inputs[$index]}"
+    expected_calls="${calls[$index]}"
+    reset_fake_docker_records
+    printf '%s' "$input" >"$input_file"
+    set_child_state_vars
+    run_dstack_function "$CASE_CAPTURE_DIR/confirmation-$label" ddownv <"$input_file"
+
+    assert_status 0 "$CAPTURE_STATUS" "$label confirmation status"
+    assert_text_file "$CAPTURE_STDOUT" \
+      $'[WARN] This will remove containers + volumes\n' \
+      "$label confirmation stdout"
+    assert_file_empty "$CAPTURE_STDERR" "$label confirmation stderr"
+    assert_call_count "$expected_calls"
+    if ((expected_calls)); then
+      assert_argv 1 compose -f "$FORWARD_COMPOSE" down -v
+    fi
+  done
+}
+
 _status_rebuild_suppresses_docker_stderr() {
   _forward_prepare_local
   _status_configure_response 1 31 $'build stdout\n' $'build stderr\n'
@@ -245,6 +277,7 @@ register_case status status::drun_missing_service_returns_one _status_drun_missi
 register_case status status::unresolved_explicit_stack_returns_zero _status_unresolved_explicit_stack_returns_zero
 register_case status status::missing_local_compose_returns_zero _status_missing_local_compose_returns_zero
 register_case status status::eof_cancels_confirmation_without_docker _status_eof_cancels_confirmation
+register_case status status::non_tty_confirmation_input_matrix _status_non_tty_confirmation_input_matrix
 register_case status status::drebuild_suppresses_docker_stderr _status_rebuild_suppresses_docker_stderr
 register_case status status::pipeline_status_depends_on_caller_pipefail _status_pipeline_depends_on_caller_pipefail
 register_case status status::caller_errexit_stops_after_unmasked_failure _status_errexit_stops_after_unmasked_failure

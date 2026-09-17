@@ -81,6 +81,25 @@ _compose_discovery_multiple_candidates_non_tty_errors() {
     $'[ERROR] Multiple compose files found. Choose one with -f, --file, --compose-file, or DSTACK_COMPOSE_FILE.\n'
 }
 
+_compose_piped_selection_is_ignored_without_tty() {
+  local dir="$CASE_CURRENT_DIR"
+  local input="$CASE_CAPTURE_DIR/piped-selection.input"
+
+  : >"$dir/docker-compose.yml"
+  : >"$dir/compose.yml"
+  printf '1\n' >"$input"
+  set_child_state_vars
+  run_dstack_function "$CASE_CAPTURE_DIR/piped-selection" dstart <"$input"
+
+  assert_status 0 "$CAPTURE_STATUS"
+  assert_file_empty "$CAPTURE_STDOUT" "piped selection stdout"
+  assert_file_empty "$CAPTURE_STDERR" "piped selection stderr"
+  assert_call_count 1
+  assert_argv 1 compose -f \
+    '[ERROR] Multiple compose files found. Choose one with -f, --file, --compose-file, or DSTACK_COMPOSE_FILE.' \
+    start
+}
+
 _compose_discovery_custom_values_are_verbatim() {
   local dir="$CASE_CURRENT_DIR"
 
@@ -118,6 +137,7 @@ register_case compose compose::glob_candidates_follow_standard_candidates _compo
 register_case compose compose::duplicate_candidates_are_removed _compose_discovery_duplicate_candidates_are_removed
 register_case compose compose::one_candidate_is_automatic _compose_discovery_one_candidate_is_automatic
 register_case compose compose::multiple_candidates_non_tty_errors _compose_discovery_multiple_candidates_non_tty_errors
+register_case compose compose::piped_selection_is_ignored_without_tty _compose_piped_selection_is_ignored_without_tty
 register_case compose compose::custom_candidate_values_are_verbatim _compose_discovery_custom_values_are_verbatim
 register_case compose compose::custom_candidate_values_split_spaces _compose_discovery_custom_values_split_spaces
 register_case compose compose::default_candidate_path_preserves_spaces _compose_discovery_default_paths_preserve_spaces

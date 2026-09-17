@@ -33,6 +33,32 @@ _state_selecting_stack_and_selector_exports_both() {
   assert_call_count 0
 }
 
+_state_file_flag_selector_exports_both() {
+  _state_prepare_registered app
+  set_child_state_vars DSTACK DSTACK_COMPOSE_FILE
+  run_dstack_function "$CASE_CAPTURE_DIR/select-file-flag" dstack app -f compose.prod.yml
+
+  assert_status 0 "$CAPTURE_STATUS"
+  assert_child_state DSTACK set "$STATE_STACK" exported
+  assert_child_state DSTACK_COMPOSE_FILE set compose.prod.yml exported
+  assert_call_count 0
+}
+
+_state_invalid_stack_selection_preserves_previous_state() {
+  DSTACK="$CASE_PROJECTS/previous-stack"
+  DSTACK_COMPOSE_FILE=previous-selector
+  export DSTACK DSTACK_COMPOSE_FILE
+  set_child_state_vars DSTACK DSTACK_COMPOSE_FILE
+  run_dstack_function "$CASE_CAPTURE_DIR/invalid-selection" dstack missing
+
+  assert_status 0 "$CAPTURE_STATUS"
+  assert_child_state DSTACK set "$CASE_PROJECTS/previous-stack" exported
+  assert_child_state DSTACK_COMPOSE_FILE set previous-selector exported
+  assert_text_file "$CAPTURE_STDOUT" $'[ERROR] Stack not found: missing\n'
+  assert_file_empty "$CAPTURE_STDERR"
+  assert_call_count 0
+}
+
 _state_changing_stack_replaces_context() {
   local first
   local second
@@ -103,10 +129,27 @@ EOF
   assert_call_count 0
 }
 
+_state_child_selection_cannot_mutate_parent() {
+  _state_prepare_registered app
+  unset DSTACK DSTACK_COMPOSE_FILE
+  set_child_state_vars DSTACK DSTACK_COMPOSE_FILE
+  run_dstack_function "$CASE_CAPTURE_DIR/child-only" dstack app compose.yml
+
+  assert_status 0 "$CAPTURE_STATUS"
+  assert_child_state DSTACK set "$STATE_STACK" exported
+  assert_child_state DSTACK_COMPOSE_FILE set compose.yml exported
+  assert_var_unset DSTACK
+  assert_var_unset DSTACK_COMPOSE_FILE
+  assert_call_count 0
+}
+
 register_case status state::selecting_stack_exports_context_and_clears_selector _state_selecting_stack_exports_context_and_clears_selector
 register_case status state::selecting_stack_and_unvalidated_selector_exports_both _state_selecting_stack_and_selector_exports_both
+register_case status state::file_flag_selector_exports_both _state_file_flag_selector_exports_both
+register_case status state::invalid_stack_selection_preserves_previous_state _state_invalid_stack_selection_preserves_previous_state
 register_case status state::changing_stack_replaces_context_and_clears_selector _state_changing_stack_replaces_context
 
 # Possible bug/quirk documented by AGENTS.md.
 register_case status state::unregister_active_registered_stack_leaves_context _state_unregister_active_registered_stack_leaves_context_quirk
 register_case status state::exported_context_is_inherited_by_child_process _state_exported_context_is_inherited_by_child_process
+register_case status state::child_selection_cannot_mutate_parent_shell _state_child_selection_cannot_mutate_parent
