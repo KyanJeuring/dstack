@@ -530,9 +530,17 @@ mod tests {
     fn punctuation_and_command_like_names_are_exact_data() {
         let temp = TempDir::new().expect("temporary directory should be created");
         let mut registry = Registry::default();
+        let shared_path = project(&temp, "shared-project");
         for name in ["registry", "logs", "prod.*[1]=blue"] {
             registry
-                .insert(profile(&temp, name, &[]))
+                .insert(
+                    StackProfile::for_registration(
+                        name.to_owned(),
+                        shared_path.clone(),
+                        Vec::new(),
+                    )
+                    .expect("punctuation-bearing name should be valid"),
+                )
                 .expect("punctuation-bearing name should be valid");
         }
 
