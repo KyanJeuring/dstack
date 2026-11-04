@@ -421,8 +421,17 @@ go to a guarded fake executable that records exact argument boundaries and
 configured responses. A fail-closed fallback prevents the suite from silently
 using a real Docker CLI, so no Docker daemon is required.
 
-See [the characterization test plan](docs/testing/characterization-test-plan.md)
-for the planned behavioral coverage and CI strategy.
+The in-progress Rust v2 implementation has a separate native test suite. Run
+its formatting, lint, and test gates with:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --all-features --locked
+```
+
+V2 registry tests use `DSTACK_CONFIG_DIR` to isolate all persistent state.
+The current v1 runtime and its real registry are never used by those tests.
 
 ---
 

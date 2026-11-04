@@ -82,14 +82,20 @@ DStack v2 is an in-progress Rust migration that starts at version `2.0.0`.
 Changes must keep the v1 characterization suite green and record approved v2
 divergences separately rather than rewriting v1 expectations.
 
-Phase 1 Rust validation uses:
+Rust validation uses:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --all-features --locked
 cargo build --locked
 ```
+
+Phase 2 adds the native v2 registry foundation. Registry tests and manual
+development commands must set `DSTACK_CONFIG_DIR` to a temporary directory so
+they never read or write a developer's real v1 or v2 registry. The override
+contains `registry.toml`; its `legacy/registry` child is the isolated v1
+migration fixture.
 
 The same developer workflows are available through `make fmt-check`,
 `make lint`, `make test`, `make build`, and `make ci` on Unix-like systems.
