@@ -90,3 +90,6 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo build --locked
 ```
+
+The same developer workflows are available through `make fmt-check`,
+`make lint`, `make test`, `make build`, and `make ci` on Unix-like systems.

@@ -1,10 +1,10 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use dstack::Cli;
+use dstack_compose::Cli;
 
 fn main() -> ExitCode {
-    match dstack::run(Cli::parse()) {
+    match dstack_compose::run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("dstack: {error}");

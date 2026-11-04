@@ -1,11 +1,25 @@
 [package]
-name = "dstack"
+name = "dstack-compose"
 version = "2.0.0"
 edition = "2024"
 description = "Docker Compose stack management from anywhere"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/kyanjeuring/dstack"
+keywords = ["docker", "compose", "cli", "containers"]
+categories = ["command-line-utilities", "development-tools"]
+include = [
+  "src/**",
+  "tests/phase1_cli.rs",
+  "Cargo.toml",
+  "Cargo.lock",
+  "README.md",
+  "LICENSE",
+]
+
+[[bin]]
+name = "dstack"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }

@@ -7,8 +7,9 @@
 > [!NOTE]
 > The characterized Bash implementation remains the supported DStack v1
 > release. DStack v2 is being developed alongside it in Rust, beginning at
-> package version `2.0.0`. Do not replace an existing v1 installation with the
-> development binary yet.
+> package version `2.0.0`. Its Cargo package is `dstack-compose`, while the
+> executable remains `dstack`. The package is not published yet; do not replace
+> an existing v1 installation with the development binary.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

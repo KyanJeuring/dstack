@@ -95,7 +95,9 @@ clearly. No placeholder `doctor` command is needed.
 tests on Linux/macOS/Windows. Existing Bash tests still run unchanged.
 
 **CI:** add format/lint/test/build jobs and native OS smoke builds. Keep the
-existing Bash matrix and Linux PTY job required.
+existing Bash matrix and Linux PTY job required. Repository-owned release and
+package workflows may be scaffolded from proven IRIS patterns, but remain
+dormant until the distribution phase and accept only v2 tags.
 
 **Compatibility:** binary uses a development name/path or explicit feature
 selection; it does not shadow installed `dstack.sh` commands.
@@ -106,6 +108,7 @@ selection; it does not shadow installed `dstack.sh` commands.
 
 **Completion:** reproducible locked builds pass on three OSes, the binary has no
 Docker side effects, and the project remains deliberately one package/binary.
+No tag, release, crate publication, or installer activation occurs.
 
 ## Phase 2 — config, registry, and migration primitives
 

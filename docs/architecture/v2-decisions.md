@@ -9,6 +9,9 @@ deferred there are not approved merely because the overall direction is.
 
 - DStack v2 starts at version `2.0.0`. It is a major redesign, not a preview
   numbered below 1.0 and not an extension of the v1 version line.
+- The crates.io package name is `dstack-compose`; the package produces the
+  single executable `dstack`. The name was available when selected, but it is
+  not reserved until the first approved publication.
 - Rust is the implementation language. The initial project is one Cargo
   package and one `dstack` executable.
 - Keep the implementation synchronous, dependency-light, and shallow. There is
@@ -107,6 +110,7 @@ deferred there are not approved merely because the overall direction is.
 ## Phase 1 boundary
 
 Phase 1 creates the Rust `2.0.0` package, typed help/version foundation,
-quality tests, and native build checks only. It does not implement Docker,
-registry/configuration, discovery/resolution, Compose selection, shell/session
-adapters, installers, releases, or self-update.
+quality tests, native build checks, and dormant CI/CD scaffolding. It does not
+implement Docker, registry/configuration, discovery/resolution, Compose
+selection, shell/session adapters, installers, releases, or self-update, and
+it creates no tag or published artifact.
