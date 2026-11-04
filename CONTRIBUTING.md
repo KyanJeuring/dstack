@@ -74,3 +74,19 @@ MAJOR – breaking changes
 MINOR – new features
 
 PATCH – bug fixes
+
+## DStack v2 development
+
+The supported runtime is still the characterized Bash v1 implementation.
+DStack v2 is an in-progress Rust migration that starts at version `2.0.0`.
+Changes must keep the v1 characterization suite green and record approved v2
+divergences separately rather than rewriting v1 expectations.
+
+Phase 1 Rust validation uses:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo build --locked
+```

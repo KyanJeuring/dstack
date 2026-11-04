@@ -4,6 +4,12 @@
 
 **Docker Compose stack management**
 
+> [!NOTE]
+> The characterized Bash implementation remains the supported DStack v1
+> release. DStack v2 is being developed alongside it in Rust, beginning at
+> package version `2.0.0`. Do not replace an existing v1 installation with the
+> development binary yet.
+
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
 No more constantly changing directories just to run `docker compose up` or `down`.
