@@ -17,3 +17,6 @@ Thumbs.db
 
 # Rust build output
 /target/
+
+# Maintainer-local architecture and design material
+/docs/
