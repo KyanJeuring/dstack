@@ -45,6 +45,6 @@ fn unsupported_bare_invocation_returns_application_error() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8(output.stderr).expect("error output should be UTF-8"),
-        "dstack: no DStack v2 commands are available in Phase 1; use --help or --version\n"
+        "dstack: no command provided; use --help to see available DStack v2 commands\n"
     );
 }

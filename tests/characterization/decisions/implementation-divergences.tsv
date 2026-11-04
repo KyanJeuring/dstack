@@ -16,8 +16,8 @@ public.drebootstack	redesign	Use recreate; down failure stops the workflow befor
 public.drebuildnocache	redesign	Use rebuild --no-cache; multi-step execution stops on first failure.	5	V1 sequencing remains characterized.
 public.dstackpurge	remove	DStack does not combine stack-local teardown with host-wide Docker pruning.	5	No permanent core equivalent.
 public.dstopall	remove	Host-wide stop-all is not a permanent DStack command.	5	Direct Docker usage remains available.
-registry.fixed_home_path	redesign	Structured versioned registry storage uses native platform locations and an explicit v1 migration.	2	Exact location identifiers and schema remain Phase 2 decisions.
-registry.space_path_word_splitting	fix	Native path values support spaces and Unicode without shell word splitting.	2	Native path policy is tested in Phase 2.
-registry.regex_name_rewrite	fix	Registry keys use exact structured lookup rather than regular expressions.	2	Exact-name behavior is tested in Phase 2.
-registry.equals_name_format	fix	Structured storage safely represents names independently of delimiter syntax.	2	Validation policy for control characters remains deferred.
-registry.fixed_tmp_no_locking	redesign	Registry writes use locking, unique same-directory staging, and platform-aware replacement.	2	Must be tested before v2 becomes write authority.
+registry.fixed_home_path	redesign	Structured versioned registry storage uses native platform local-data locations and explicit v1 migration.	2	Implemented with schema version 1 and the DSTACK_CONFIG_DIR isolation override; v1 source remains untouched.
+registry.space_path_word_splitting	fix	Native path values support spaces and Unicode without shell word splitting.	2	Implemented with PathBuf domain values and explicit UTF-8 validation at the TOML boundary.
+registry.regex_name_rewrite	fix	Registry keys use exact structured lookup rather than regular expressions.	2	Implemented and regression-tested for punctuation-bearing names.
+registry.equals_name_format	fix	Structured storage safely represents names independently of delimiter syntax.	2	Implemented for UTF-8 names; empty, whitespace-only, and control-character names are rejected.
+registry.fixed_tmp_no_locking	redesign	Registry writes use locking, unique same-directory staging, and platform-aware replacement.	2	Implemented with native advisory file locking and atomic-write-file replacement.
