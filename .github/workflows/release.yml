@@ -1,0 +1,288 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v2.*.*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Bash validation dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y shellcheck
+
+      - name: Verify tag matches Cargo.toml
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION="$(
+            cargo metadata --no-deps --format-version 1 |
+              jq -r '.packages[] | select(.name == "dstack-compose") | .version'
+          )"
+
+          if [[ "$TAG_VERSION" != "$CARGO_VERSION" ]]; then
+            echo "Tag version:   $TAG_VERSION"
+            echo "Cargo version: $CARGO_VERSION"
+            echo "The Git tag must match Cargo.toml."
+            exit 1
+          fi
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --all-features --locked
+
+      - name: Verify crate package
+        run: cargo package --locked
+
+      - name: Lint Bash with ShellCheck
+        shell: bash
+        run: |
+          shellcheck -x \
+            dstack.sh \
+            tests/characterization/run.sh \
+            tests/characterization/helpers/child-driver.bash \
+            tests/characterization/stubs/docker \
+            tests/characterization/stubs/docker-deny
+
+      - name: Check Bash syntax
+        shell: bash
+        run: |
+          bash_files=(
+            dstack.sh
+            tests/characterization/run.sh
+            tests/characterization/cases/*.bash
+            tests/characterization/helpers/*.bash
+            tests/characterization/stubs/docker
+            tests/characterization/stubs/docker-deny
+          )
+          for bash_file in "${bash_files[@]}"; do
+            bash -n "$bash_file"
+          done
+
+      - name: Run v1 characterization
+        shell: bash
+        run: bash tests/characterization/run.sh all
+
+      - name: Run v1 PTY characterization
+        shell: bash
+        run: bash tests/characterization/run.sh interactive
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x86_64
+            deb_arch: amd64
+            package_arch: x86_64
+
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux-aarch64
+            deb_arch: arm64
+            package_arch: aarch64
+
+          - name: macOS Intel
+            runner: macos-26-intel
+            target: x86_64-apple-darwin
+            platform: macos-x86_64
+
+          - name: macOS Apple Silicon
+            runner: macos-26
+            target: aarch64-apple-darwin
+            platform: macos-aarch64
+
+          - name: Windows x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform: windows-x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          ARCHIVE="dstack-${GITHUB_REF_NAME}-${{ matrix.platform }}.tar.gz"
+          tar -C "target/${{ matrix.target }}/release" -czf "dist/$ARCHIVE" dstack
+          cd dist
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Package Debian archive
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          DEB_ARCH: ${{ matrix.deb_arch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_ROOT="dist/deb-root"
+          DEB_FILE="dstack-compose_${VERSION}_${DEB_ARCH}.deb"
+
+          rm -rf "$PACKAGE_ROOT"
+          install -Dm755 \
+            "target/${{ matrix.target }}/release/dstack" \
+            "$PACKAGE_ROOT/usr/bin/dstack"
+          install -Dm644 LICENSE "$PACKAGE_ROOT/usr/share/doc/dstack-compose/copyright"
+
+          mkdir -p "$PACKAGE_ROOT/DEBIAN"
+          cat > "$PACKAGE_ROOT/DEBIAN/control" <<EOF
+          Package: dstack-compose
+          Version: ${VERSION}
+          Section: utils
+          Priority: optional
+          Architecture: ${DEB_ARCH}
+          Maintainer: Kyan Jeuring <KyanJeuring@users.noreply.github.com>
+          Homepage: https://github.com/KyanJeuring/dstack
+          Depends: libc6, libgcc-s1
+          Description: Docker Compose stack management from anywhere
+           DStack resolves Compose projects and runs stack workflows without
+           requiring the user to change directories.
+          EOF
+
+          dpkg-deb --build --root-owner-group "$PACKAGE_ROOT" "dist/$DEB_FILE"
+          rm -rf "$PACKAGE_ROOT"
+
+          cd dist
+          sha256sum "$DEB_FILE" > "$DEB_FILE.sha256"
+
+      - name: Install Go for Linux package tooling
+        if: runner.os == 'Linux'
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install nFPM
+        if: runner.os == 'Linux'
+        shell: bash
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: Package RPM and Arch archives
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          NFPM_ARCH: ${{ matrix.package_arch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          export NFPM_VERSION="$VERSION"
+          export NFPM_BINARY="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/dstack"
+
+          RPM_FILE="dstack-compose-${VERSION}-1.${NFPM_ARCH}.rpm"
+          ARCH_FILE="dstack-compose-${VERSION}-1-${NFPM_ARCH}.pkg.tar.zst"
+
+          nfpm package \
+            --config packaging/nfpm.yaml \
+            --packager rpm \
+            --target "dist/$RPM_FILE"
+
+          nfpm package \
+            --config packaging/nfpm.yaml \
+            --packager archlinux \
+            --target "dist/$ARCH_FILE"
+
+          cd dist
+          sha256sum "$RPM_FILE" > "$RPM_FILE.sha256"
+          sha256sum "$ARCH_FILE" > "$ARCH_FILE.sha256"
+
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $archive = "dstack-$env:GITHUB_REF_NAME-${{ matrix.platform }}.zip"
+          $binary = "target\${{ matrix.target }}\release\dstack.exe"
+          Compress-Archive -Path $binary -DestinationPath "dist\$archive"
+          $hash = (Get-FileHash "dist\$archive" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $archive" | Out-File "dist\$archive.sha256" -Encoding ascii
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub draft release
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create aggregate checksum manifest
+        shell: bash
+        run: |
+          export LC_ALL=C
+          sort -k2 dist/*.sha256 > dist/SHA256SUMS
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          draft: true
+          body_path: .github/RELEASE_TEMPLATE.md
+          fail_on_unmatched_files: true
+          files: dist/*

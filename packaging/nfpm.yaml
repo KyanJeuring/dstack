@@ -1,0 +1,50 @@
+name: dstack-compose
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+version_schema: semver
+release: 1
+
+section: utils
+priority: optional
+
+maintainer: Kyan Jeuring <KyanJeuring@users.noreply.github.com>
+vendor: DStack
+homepage: https://github.com/KyanJeuring/dstack
+license: MIT
+
+description: |
+  Docker Compose stack management from anywhere.
+  DStack resolves Compose projects and runs stack workflows without requiring
+  the user to change directories.
+
+contents:
+  - src: ${NFPM_BINARY}
+    dst: /usr/bin/dstack
+    expand: true
+    file_info:
+      mode: 0755
+
+  - src: LICENSE
+    dst: /usr/share/licenses/dstack-compose/LICENSE
+    file_info:
+      mode: 0644
+
+overrides:
+  rpm:
+    depends:
+      - glibc
+      - libgcc
+
+  archlinux:
+    depends:
+      - glibc
+      - gcc-libs
+
+archlinux:
+  pkgbase: dstack-compose
+  packager: Kyan Jeuring <KyanJeuring@users.noreply.github.com>
+
+rpm:
+  packager: Kyan Jeuring <KyanJeuring@users.noreply.github.com>
+  compression: zstd
