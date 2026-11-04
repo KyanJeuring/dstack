@@ -1,0 +1,11 @@
+[package]
+name = "dstack"
+version = "2.0.0"
+edition = "2024"
+description = "Docker Compose stack management from anywhere"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/kyanjeuring/dstack"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
