@@ -11,6 +11,24 @@
 > executable remains `dstack`. The package is not published yet; do not replace
 > an existing v1 installation with the development binary.
 
+The in-development v2 foundation currently provides persistent registry,
+configuration, discovery, and read-only context planning without invoking
+Docker. Developer-facing commands include:
+
+```text
+dstack config path
+dstack config show
+dstack registry list|show|add|remove
+dstack migrate registry [--dry-run]
+dstack list
+dstack [-s NAME] [--file FILE]... context show
+```
+
+The first non-help operation creates `~/.config/dstack/dstack.conf` and a
+versioned empty `registry.toml` when absent. Set `DSTACK_CONFIG_DIR` to a
+temporary directory for development and tests; it replaces that root
+completely. These v2 commands are not yet a released user interface.
+
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
 No more constantly changing directories just to run `docker compose up` or `down`.

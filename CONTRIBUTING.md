@@ -91,11 +91,12 @@ cargo test --all-features --locked
 cargo build --locked
 ```
 
-Phase 2 adds the native v2 registry foundation. Registry tests and manual
-development commands must set `DSTACK_CONFIG_DIR` to a temporary directory so
-they never read or write a developer's real v1 or v2 registry. The override
-contains `registry.toml`; its `legacy/registry` child is the isolated v1
-migration fixture.
+Phase 3 adds configuration bootstrap, stack discovery, and read-only
+stack/Compose resolution. Rust tests and manual development commands must set
+`DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
+developer's real v1 or v2 state. The override contains `dstack.conf` and
+`registry.toml`; its `legacy/registry` child remains the isolated v1 migration
+fixture. Phase 3 does not execute Docker.
 
 The same developer workflows are available through `make fmt-check`,
 `make lint`, `make test`, `make build`, and `make ci` on Unix-like systems.
