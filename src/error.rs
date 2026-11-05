@@ -1,13 +1,20 @@
 use std::{fmt, io, process::ExitCode};
 
-use crate::{config::ConfigError, migration::MigrationError, registry::RegistryError};
+use crate::{
+    compose::ComposeError, config::ConfigError, discovery::DiscoveryError,
+    migration::MigrationError, registry::RegistryError, resolution::ResolutionError,
+};
 
 #[derive(Debug)]
 pub enum AppError {
     NoCommand,
+    InvalidOptions(String),
     Config(ConfigError),
     Registry(RegistryError),
     Migration(MigrationError),
+    Discovery(DiscoveryError),
+    Resolution(ResolutionError),
+    Compose(ComposeError),
     MigrationIncomplete { skipped: usize, conflicts: usize },
     Output(io::Error),
 }
@@ -15,10 +22,13 @@ pub enum AppError {
 impl AppError {
     pub fn exit_code(&self) -> ExitCode {
         match self {
-            Self::NoCommand => ExitCode::from(2),
+            Self::NoCommand | Self::InvalidOptions(_) => ExitCode::from(2),
             Self::Config(_)
             | Self::Registry(_)
             | Self::Migration(_)
+            | Self::Discovery(_)
+            | Self::Resolution(_)
+            | Self::Compose(_)
             | Self::MigrationIncomplete { .. }
             | Self::Output(_) => ExitCode::FAILURE,
         }
@@ -30,9 +40,13 @@ impl fmt::Display for AppError {
         match self {
             Self::NoCommand => formatter
                 .write_str("no command provided; use --help to see available DStack v2 commands"),
+            Self::InvalidOptions(reason) => formatter.write_str(reason),
             Self::Config(error) => error.fmt(formatter),
             Self::Registry(error) => error.fmt(formatter),
             Self::Migration(error) => error.fmt(formatter),
+            Self::Discovery(error) => error.fmt(formatter),
+            Self::Resolution(error) => error.fmt(formatter),
+            Self::Compose(error) => error.fmt(formatter),
             Self::MigrationIncomplete { skipped, conflicts } => write!(
                 formatter,
                 "legacy registry migration completed with {skipped} skipped entr{} and {conflicts} conflict{}",
@@ -50,8 +64,11 @@ impl std::error::Error for AppError {
             Self::Config(error) => Some(error),
             Self::Registry(error) => Some(error),
             Self::Migration(error) => Some(error),
+            Self::Discovery(error) => Some(error),
+            Self::Resolution(error) => Some(error),
+            Self::Compose(error) => Some(error),
             Self::Output(error) => Some(error),
-            Self::NoCommand | Self::MigrationIncomplete { .. } => None,
+            Self::NoCommand | Self::InvalidOptions(_) | Self::MigrationIncomplete { .. } => None,
         }
     }
 }
@@ -71,6 +88,24 @@ impl From<RegistryError> for AppError {
 impl From<MigrationError> for AppError {
     fn from(error: MigrationError) -> Self {
         Self::Migration(error)
+    }
+}
+
+impl From<DiscoveryError> for AppError {
+    fn from(error: DiscoveryError) -> Self {
+        Self::Discovery(error)
+    }
+}
+
+impl From<ResolutionError> for AppError {
+    fn from(error: ResolutionError) -> Self {
+        Self::Resolution(error)
+    }
+}
+
+impl From<ComposeError> for AppError {
+    fn from(error: ComposeError) -> Self {
+        Self::Compose(error)
     }
 }
 

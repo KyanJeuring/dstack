@@ -1,54 +1,104 @@
-use std::io::{self, Write};
+use std::{
+    env,
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
 
 use crate::{
     Cli,
-    cli::{Command, MigrationCommand, RegistryCommand},
-    config::AppPaths,
+    cli::{Command, ConfigCommand, ContextCommand, MigrationCommand, RegistryCommand},
+    compose::resolve_compose_files,
+    config::{AppPaths, ConfigStore, DstackConfig},
+    discovery::discover_stacks,
     error::AppError,
     migration::{MigrationReport, migrate_registry},
-    registry::{RegistryStore, StackProfile},
+    registry::{Registry, RegistryStore, StackProfile},
+    resolution::{effective_stacks, resolve_stack},
 };
 
 /// Runs the v2 application after CLI parsing.
 pub fn run(cli: Cli) -> Result<(), AppError> {
     let paths = AppPaths::discover()?;
+    let current_dir =
+        env::current_dir().map_err(|source| crate::resolution::ResolutionError::Io {
+            action: "read current directory",
+            path: PathBuf::from("."),
+            source,
+        })?;
     let stdout = io::stdout();
     let stderr = io::stderr();
-    run_with_paths(cli, &paths, &mut stdout.lock(), &mut stderr.lock())
+    run_with_environment(
+        cli,
+        &paths,
+        &current_dir,
+        &mut stdout.lock(),
+        &mut stderr.lock(),
+    )
 }
 
-pub(crate) fn run_with_paths(
+struct RuntimeState {
+    config: DstackConfig,
+    registry: Registry,
+    registry_store: RegistryStore,
+}
+
+pub(crate) fn run_with_environment(
     cli: Cli,
     paths: &AppPaths,
+    current_dir: &Path,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<(), AppError> {
     let command = cli.command.ok_or(AppError::NoCommand)?;
-    let store = RegistryStore::new(
-        paths.registry_file().to_path_buf(),
-        paths.registry_lock().to_path_buf(),
-    );
+    validate_global_options(&command, cli.stack.as_deref(), &cli.files)?;
+    let root_stack = cli.stack;
+    let root_files = cli.files;
+    let runtime = bootstrap(paths, stderr)?;
 
     match command {
+        Command::List => list_effective(&runtime, paths, stdout),
+        Command::Config(arguments) => match arguments.command {
+            ConfigCommand::Path => {
+                writeln!(stdout, "{}", paths.config_file().display())?;
+                Ok(())
+            }
+            ConfigCommand::Show => show_config(paths, &runtime.config, stdout),
+        },
+        Command::Context(arguments) => match arguments.command {
+            ContextCommand::Show(options) => {
+                let stack = merge_stack_options(root_stack, options.stack)?;
+                let files = [root_files, options.files].concat();
+                show_context(
+                    &runtime,
+                    paths,
+                    stack.as_deref(),
+                    &files,
+                    current_dir,
+                    stdout,
+                )
+            }
+        },
         Command::Registry(arguments) => match arguments.command {
-            RegistryCommand::List => list_registry(&store, stdout),
-            RegistryCommand::Show { name } => show_profile(&store, &name, stdout),
+            RegistryCommand::List => list_registry(&runtime.registry, stdout),
+            RegistryCommand::Show { name } => show_profile(&runtime.registry, &name, stdout),
             RegistryCommand::Add { name, path, files } => {
-                let profile = StackProfile::for_registration(name, path, files)?;
+                let profile =
+                    StackProfile::for_registration(name, path, [root_files, files].concat())?;
                 let registered_name = profile.name.clone();
-                store.add(profile)?;
+                runtime.registry_store.add(profile)?;
                 writeln!(stdout, "Registered stack profile '{registered_name}'.")?;
                 Ok(())
             }
             RegistryCommand::Remove { name } => {
-                store.remove(&name)?;
+                runtime.registry_store.remove(&name)?;
                 writeln!(stdout, "Removed stack profile '{name}'.")?;
                 Ok(())
             }
         },
         Command::Migrate(arguments) => match arguments.command {
             MigrationCommand::Registry { dry_run } => {
-                let report = migrate_registry(&store, paths.legacy_registry(), dry_run)?;
+                let report =
+                    migrate_registry(&runtime.registry_store, paths.legacy_registry(), dry_run)?;
                 write_migration_report(&report, stdout, stderr)?;
                 if report.has_issues() {
                     Err(AppError::MigrationIncomplete {
@@ -63,10 +113,149 @@ pub(crate) fn run_with_paths(
     }
 }
 
-fn list_registry(store: &RegistryStore, output: &mut dyn Write) -> Result<(), AppError> {
-    let registry = store.load()?;
+fn merge_stack_options(
+    root: Option<String>,
+    command: Option<String>,
+) -> Result<Option<String>, AppError> {
+    match (root, command) {
+        (Some(_), Some(_)) => Err(AppError::InvalidOptions(
+            "--stack/-s may be supplied only once".to_owned(),
+        )),
+        (Some(value), None) | (None, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn validate_global_options(
+    command: &Command,
+    stack: Option<&str>,
+    files: &[PathBuf],
+) -> Result<(), AppError> {
+    let supports_stack = matches!(command, Command::Context(_));
+    let supports_files = matches!(
+        command,
+        Command::Context(_)
+            | Command::Registry(crate::cli::RegistryArgs {
+                command: RegistryCommand::Add { .. }
+            })
+    );
+
+    if stack.is_some() && !supports_stack {
+        return Err(AppError::InvalidOptions(
+            "--stack/-s is only supported by stack-context operations in Phase 3".to_owned(),
+        ));
+    }
+    if !files.is_empty() && !supports_files {
+        return Err(AppError::InvalidOptions(
+            "--file is only supported by 'context show' and 'registry add' in Phase 3".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn bootstrap(paths: &AppPaths, stderr: &mut dyn Write) -> Result<RuntimeState, AppError> {
+    let registry_store = RegistryStore::new(
+        paths.registry_file().to_path_buf(),
+        paths.registry_lock().to_path_buf(),
+    );
+    let config_store = ConfigStore::new(paths.config_file().to_path_buf());
+
+    let migrated_from = {
+        let _lock = registry_store.acquire_lock()?;
+        let migrated = registry_store.initialize_unlocked(paths.phase2_registry())?;
+        config_store.ensure_exists()?;
+        migrated
+    };
+
+    if let Some(source) = migrated_from {
+        writeln!(
+            stderr,
+            "dstack: copied pre-release Phase 2 registry '{}' to '{}'; the source was left untouched",
+            source.display(),
+            paths.registry_file().display()
+        )?;
+    }
+
+    Ok(RuntimeState {
+        config: config_store.load()?,
+        registry: registry_store.load()?,
+        registry_store,
+    })
+}
+
+fn show_config(
+    paths: &AppPaths,
+    config: &DstackConfig,
+    output: &mut dyn Write,
+) -> Result<(), AppError> {
+    writeln!(output, "Config: {}", paths.config_file().display())?;
+    writeln!(output, "Version: {}", config.version)?;
+    writeln!(output, "Discovery paths:")?;
+    for path in &config.discovery.paths {
+        writeln!(output, "  - {}", path.display())?;
+    }
+    writeln!(output, "Compose filenames (priority order):")?;
+    for file in &config.discovery.compose_files {
+        writeln!(output, "  - {}", file.display())?;
+    }
+    Ok(())
+}
+
+fn list_effective(
+    runtime: &RuntimeState,
+    paths: &AppPaths,
+    output: &mut dyn Write,
+) -> Result<(), AppError> {
+    let discovered = discover_stacks(&runtime.config, paths.home_dir())?;
+    writeln!(output, "NAME\tSOURCE\tPATH")?;
+    for stack in effective_stacks(&runtime.registry, &discovered) {
+        let source = if stack.ambiguous {
+            "discovered (ambiguous)".to_owned()
+        } else {
+            stack.source.to_string()
+        };
+        writeln!(
+            output,
+            "{}\t{}\t{}",
+            stack.name,
+            source,
+            stack.project.display()
+        )?;
+    }
+    Ok(())
+}
+
+fn show_context(
+    runtime: &RuntimeState,
+    paths: &AppPaths,
+    explicit_stack: Option<&str>,
+    explicit_files: &[PathBuf],
+    current_dir: &Path,
+    output: &mut dyn Write,
+) -> Result<(), AppError> {
+    let discovered = discover_stacks(&runtime.config, paths.home_dir())?;
+    let stack = resolve_stack(
+        explicit_stack,
+        current_dir,
+        &runtime.registry,
+        &discovered,
+        &runtime.config,
+    )?;
+    let compose = resolve_compose_files(&stack, explicit_files, &runtime.config)?;
+
+    writeln!(output, "Stack: {}", stack.name)?;
+    writeln!(output, "Source: {}", stack.source)?;
+    writeln!(output, "Project: {}", stack.project.display())?;
+    writeln!(output, "Compose files:")?;
+    for file in compose.files {
+        writeln!(output, "  - {}", file.display())?;
+    }
+    Ok(())
+}
+
+fn list_registry(registry: &Registry, output: &mut dyn Write) -> Result<(), AppError> {
     writeln!(output, "NAME\tPATH\tFILES")?;
-    for profile in registry.stacks {
+    for profile in &registry.stacks {
         writeln!(
             output,
             "{}\t{}\t{}",
@@ -78,8 +267,7 @@ fn list_registry(store: &RegistryStore, output: &mut dyn Write) -> Result<(), Ap
     Ok(())
 }
 
-fn show_profile(store: &RegistryStore, name: &str, output: &mut dyn Write) -> Result<(), AppError> {
-    let registry = store.load()?;
+fn show_profile(registry: &Registry, name: &str, output: &mut dyn Write) -> Result<(), AppError> {
     let profile = registry
         .get(name)
         .ok_or_else(|| crate::registry::RegistryError::UnknownProfile(name.to_owned()))?;
@@ -96,7 +284,7 @@ fn show_profile(store: &RegistryStore, name: &str, output: &mut dyn Write) -> Re
     Ok(())
 }
 
-fn display_files(files: &[std::path::PathBuf]) -> String {
+fn display_files(files: &[PathBuf]) -> String {
     if files.is_empty() {
         "-".to_owned()
     } else {
@@ -167,40 +355,137 @@ fn write_migration_report(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
 
     use clap::Parser;
     use tempfile::TempDir;
 
-    use super::run_with_paths;
-    use crate::{AppError, Cli, config::AppPaths};
+    use super::run_with_environment;
+    use crate::{
+        AppError, Cli,
+        config::AppPaths,
+        registry::{Registry, StackProfile},
+    };
+
+    fn paths(temp: &TempDir) -> AppPaths {
+        AppPaths::with_home(
+            temp.path().join("state"),
+            temp.path().join("home"),
+            temp.path().join("legacy/registry"),
+            None,
+        )
+    }
 
     #[test]
-    fn no_command_returns_usage_error() {
+    fn no_command_returns_usage_error_without_bootstrap() {
         let temp = TempDir::new().unwrap();
-        let paths = AppPaths::new(temp.path().join("v2"), temp.path().join("v1/registry"));
-        let error = run_with_paths(
-            Cli { command: None },
+        let paths = paths(&temp);
+        let error = run_with_environment(
+            Cli {
+                stack: None,
+                files: Vec::new(),
+                command: None,
+            },
             &paths,
+            temp.path(),
             &mut Vec::new(),
             &mut Vec::new(),
         )
         .expect_err("bare invocation should fail");
         assert!(matches!(error, AppError::NoCommand));
+        assert!(!paths.application_dir().exists());
     }
 
     #[test]
-    fn list_uses_injected_paths_and_writes_stable_header() {
+    fn first_registry_list_bootstraps_config_and_empty_registry() {
         let temp = TempDir::new().unwrap();
-        let paths = AppPaths::new(temp.path().join("v2"), PathBuf::from("unused-legacy"));
+        let paths = paths(&temp);
         let cli = Cli::try_parse_from(["dstack", "registry", "list"]).unwrap();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
-        run_with_paths(cli, &paths, &mut stdout, &mut stderr).unwrap();
+        run_with_environment(cli, &paths, temp.path(), &mut stdout, &mut stderr).unwrap();
 
         assert_eq!(stdout, b"NAME\tPATH\tFILES\n");
         assert!(stderr.is_empty());
-        assert!(!paths.registry_file().exists());
+        assert!(paths.config_file().is_file());
+        assert!(paths.registry_file().is_file());
+    }
+
+    #[test]
+    fn phase2_registry_is_copied_only_when_canonical_is_absent() {
+        let temp = TempDir::new().unwrap();
+        let old = temp.path().join("phase2/registry.toml");
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let mut old_registry = Registry::default();
+        old_registry
+            .insert(
+                StackProfile::for_registration("copied".to_owned(), project, Vec::new()).unwrap(),
+            )
+            .unwrap();
+        let old_contents = old_registry.serialize().unwrap();
+        fs::write(&old, &old_contents).unwrap();
+        let paths = AppPaths::with_home(
+            temp.path().join("canonical"),
+            temp.path().join("home"),
+            temp.path().join("legacy/registry"),
+            Some(old.clone()),
+        );
+        let mut stderr = Vec::new();
+
+        run_with_environment(
+            Cli::try_parse_from(["dstack", "registry", "list"]).unwrap(),
+            &paths,
+            temp.path(),
+            &mut Vec::new(),
+            &mut stderr,
+        )
+        .unwrap();
+
+        assert!(paths.registry_file().is_file());
+        assert_eq!(fs::read_to_string(&old).unwrap(), old_contents);
+        assert!(
+            fs::read_to_string(paths.registry_file())
+                .unwrap()
+                .contains("copied")
+        );
+        assert!(
+            String::from_utf8(stderr)
+                .unwrap()
+                .contains("left untouched")
+        );
+    }
+
+    #[test]
+    fn canonical_registry_wins_without_merging_phase2_state() {
+        let temp = TempDir::new().unwrap();
+        let paths = AppPaths::with_home(
+            temp.path().join("canonical"),
+            temp.path().join("home"),
+            PathBuf::from("unused"),
+            Some(temp.path().join("phase2/registry.toml")),
+        );
+        fs::create_dir_all(paths.application_dir()).unwrap();
+        fs::write(paths.registry_file(), "version = 1\nstacks = []\n").unwrap();
+        fs::create_dir_all(paths.phase2_registry().unwrap().parent().unwrap()).unwrap();
+        fs::write(paths.phase2_registry().unwrap(), "not = [valid").unwrap();
+        let canonical = fs::read(paths.registry_file()).unwrap();
+
+        run_with_environment(
+            Cli::try_parse_from(["dstack", "registry", "list"]).unwrap(),
+            &paths,
+            temp.path(),
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(paths.registry_file()).unwrap(), canonical);
+        assert_eq!(
+            fs::read(paths.phase2_registry().unwrap()).unwrap(),
+            b"not = [valid"
+        );
     }
 }

@@ -12,6 +12,7 @@ include = [
   "src/**",
   "tests/phase1_cli.rs",
   "tests/phase2_registry_cli.rs",
+  "tests/phase3_resolution_cli.rs",
   "Cargo.toml",
   "Cargo.lock",
   "README.md",

@@ -25,7 +25,7 @@ fn text(bytes: Vec<u8>) -> String {
 }
 
 #[test]
-fn registry_list_on_missing_store_is_empty_and_read_only() {
+fn registry_list_on_missing_store_bootstraps_an_empty_registry() {
     let temp = TempDir::new().unwrap();
     let state = temp.path().join("state");
 
@@ -34,7 +34,8 @@ fn registry_list_on_missing_store_is_empty_and_read_only() {
     assert!(output.status.success());
     assert_eq!(text(output.stdout), "NAME\tPATH\tFILES\n");
     assert!(output.stderr.is_empty());
-    assert!(!state.join("registry.toml").exists());
+    assert!(state.join("registry.toml").is_file());
+    assert!(state.join("dstack.conf").is_file());
 }
 
 #[test]
@@ -116,7 +117,7 @@ fn duplicate_names_fail_but_duplicate_project_paths_are_valid() {
 }
 
 #[test]
-fn invalid_add_inputs_do_not_create_or_modify_registry() {
+fn invalid_add_inputs_do_not_modify_bootstrapped_registry() {
     let temp = TempDir::new().unwrap();
     let state = temp.path().join("state");
     let missing = temp.path().join("missing");
@@ -127,7 +128,7 @@ fn invalid_add_inputs_do_not_create_or_modify_registry() {
     );
     assert_eq!(invalid_path.status.code(), Some(1));
     assert!(text(invalid_path.stderr).contains("not an existing directory"));
-    assert!(!state.join("registry.toml").exists());
+    let empty_registry = fs::read(state.join("registry.toml")).unwrap();
 
     let project = project(&temp, "valid");
     let duplicate_file = run_dstack(
@@ -145,7 +146,10 @@ fn invalid_add_inputs_do_not_create_or_modify_registry() {
     );
     assert_eq!(duplicate_file.status.code(), Some(1));
     assert!(text(duplicate_file.stderr).contains("provided more than once"));
-    assert!(!state.join("registry.toml").exists());
+    assert_eq!(
+        fs::read(state.join("registry.toml")).unwrap(),
+        empty_registry
+    );
 
     let empty_file = run_dstack(
         &state,
@@ -160,7 +164,10 @@ fn invalid_add_inputs_do_not_create_or_modify_registry() {
     );
     assert_eq!(empty_file.status.code(), Some(2));
     assert!(text(empty_file.stderr).contains("a value is required"));
-    assert!(!state.join("registry.toml").exists());
+    assert_eq!(
+        fs::read(state.join("registry.toml")).unwrap(),
+        empty_registry
+    );
 }
 
 #[test]
@@ -216,7 +223,8 @@ fn migration_dry_run_then_write_then_repeat_is_safe() {
     assert!(dry_stdout.contains("Mode: dry-run"));
     assert!(dry_stdout.contains("Added: 1"));
     assert!(dry_stdout.contains("Written: no"));
-    assert!(!state.join("registry.toml").exists());
+    assert!(state.join("registry.toml").is_file());
+    assert!(state.join("dstack.conf").is_file());
 
     let write = run_dstack(&state, &["migrate", "registry"]);
     assert!(write.status.success(), "{}", text(write.stderr));
@@ -278,7 +286,7 @@ fn migration_reports_invalid_and_conflicting_entries_nonzero_without_overwrite()
 }
 
 #[test]
-fn missing_legacy_source_fails_without_creating_v2_state() {
+fn missing_legacy_source_fails_after_safe_application_bootstrap() {
     let temp = TempDir::new().unwrap();
     let state = temp.path().join("state");
 
@@ -287,5 +295,6 @@ fn missing_legacy_source_fails_without_creating_v2_state() {
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert!(text(output.stderr).contains("does not exist"));
-    assert!(!state.join("registry.toml").exists());
+    assert!(state.join("registry.toml").is_file());
+    assert!(state.join("dstack.conf").is_file());
 }

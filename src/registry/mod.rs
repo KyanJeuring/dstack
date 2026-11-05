@@ -205,7 +205,7 @@ impl RegistryStore {
         Ok(result)
     }
 
-    fn acquire_lock(&self) -> Result<File, RegistryError> {
+    pub(crate) fn acquire_lock(&self) -> Result<File, RegistryError> {
         let parent = self.parent_directory()?;
         fs::create_dir_all(parent).map_err(|source| RegistryError::Io {
             action: "create registry directory",
@@ -238,7 +238,35 @@ impl RegistryStore {
         }
     }
 
-    fn save(&self, registry: &Registry) -> Result<(), RegistryError> {
+    /// Initializes the canonical registry while an exclusive registry lock is held.
+    ///
+    /// A valid pre-release Phase 2 registry may seed an absent canonical file.
+    /// The source is read-only and is never removed or rewritten.
+    pub(crate) fn initialize_unlocked(
+        &self,
+        phase2_registry: Option<&Path>,
+    ) -> Result<Option<PathBuf>, RegistryError> {
+        if self.registry_path.exists() {
+            self.load()?;
+            return Ok(None);
+        }
+
+        let (registry, migrated_from) = match phase2_registry.filter(|path| path.is_file()) {
+            Some(path) => {
+                let contents = fs::read_to_string(path).map_err(|source| RegistryError::Io {
+                    action: "read pre-release Phase 2 registry",
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+                (Registry::parse(&contents, path)?, Some(path.to_path_buf()))
+            }
+            None => (Registry::default(), None),
+        };
+        self.save(&registry)?;
+        Ok(migrated_from)
+    }
+
+    pub(crate) fn save(&self, registry: &Registry) -> Result<(), RegistryError> {
         let contents = registry.serialize()?;
         let parent = self.parent_directory()?;
         fs::create_dir_all(parent).map_err(|source| RegistryError::Io {
