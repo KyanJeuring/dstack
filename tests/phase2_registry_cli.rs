@@ -5,6 +5,7 @@ use std::{
 };
 
 use tempfile::TempDir;
+use unicode_width::UnicodeWidthStr;
 
 fn run_dstack(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_dstack"))
@@ -32,7 +33,7 @@ fn registry_list_on_missing_store_bootstraps_an_empty_registry() {
     let output = run_dstack(&state, &["registry", "list"]);
 
     assert!(output.status.success());
-    assert_eq!(text(output.stdout), "NAME\tPATH\tFILES\n");
+    assert_eq!(text(output.stdout), "NAME  PATH  FILES\n");
     assert!(output.stderr.is_empty());
     assert!(state.join("registry.toml").is_file());
     assert!(state.join("dstack.conf").is_file());
@@ -71,9 +72,15 @@ fn registry_add_show_list_and_remove_round_trip() {
     let list = run_dstack(&state, &["registry", "list"]);
     assert!(list.status.success());
     let list_stdout = text(list.stdout);
-    assert!(list_stdout.starts_with("NAME\tPATH\tFILES\n"));
-    assert!(list_stdout.contains("logs = λ\t"));
-    assert!(list_stdout.contains("compose prod.yaml, -compose.dev.yaml"));
+    let stored_path = fs::canonicalize(&project).unwrap().display().to_string();
+    let header_path_padding = " ".repeat(UnicodeWidthStr::width(stored_path.as_str()) - 2);
+    assert_eq!(
+        list_stdout,
+        format!(
+            "NAME      PATH{header_path_padding}FILES\nlogs = λ  {stored_path}  compose prod.yaml, -compose.dev.yaml\n"
+        )
+    );
+    assert!(!list_stdout.contains('\t'));
 
     let remove = run_dstack(&state, &["registry", "remove", "logs = λ"]);
     assert!(remove.status.success());
@@ -110,8 +117,14 @@ fn duplicate_names_fail_but_duplicate_project_paths_are_valid() {
     assert!(text(duplicate.stderr).contains("already registered"));
 
     let list = text(run_dstack(&state, &["registry", "list"]).stdout);
-    let dev = list.find("dev\t").unwrap();
-    let prod = list.find("prod\t").unwrap();
+    let dev = list
+        .lines()
+        .position(|line| line.starts_with("dev "))
+        .unwrap();
+    let prod = list
+        .lines()
+        .position(|line| line.starts_with("prod "))
+        .unwrap();
     assert!(dev < prod, "registry list should be sorted by name");
     assert!(!list.contains("other.yaml"));
 }

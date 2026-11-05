@@ -213,3 +213,24 @@ jobs:
           if ($actual -ne "dstack 2.0.0") {
             throw "Unexpected DStack version output: $actual"
           }
+
+      - name: Verify native redirected output (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:DSTACK_CONFIG_DIR = Join-Path $env:RUNNER_TEMP "dstack-output-smoke"
+          $lines = @(& .\target\release\dstack.exe registry list)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Native registry list failed with exit code $LASTEXITCODE"
+          }
+          if ($lines[0] -ne "NAME  PATH  FILES") {
+            throw "Unexpected native registry header: $($lines[0])"
+          }
+          $output = $lines -join "`n"
+          if ($output.Contains("`t")) {
+            throw "Native redirected output contains a tab separator"
+          }
+          $escapePrefix = [string][char]27 + "["
+          if ($output.Contains($escapePrefix)) {
+            throw "Native redirected output contains an ANSI escape sequence"
+          }

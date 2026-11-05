@@ -5,6 +5,7 @@ pub mod config;
 pub mod discovery;
 pub mod error;
 pub mod migration;
+pub mod output;
 pub mod registry;
 pub mod resolution;
 

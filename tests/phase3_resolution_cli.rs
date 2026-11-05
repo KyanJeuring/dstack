@@ -106,9 +106,9 @@ fn effective_list_combines_sources_shadows_registered_names_and_marks_ambiguity(
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
     let registered_project = project(temp.path(), "registered project", &["compose.yaml"]);
-    project(&first, "alpha", &["compose.yaml"]);
-    project(&first, "same", &["compose.yaml"]);
-    project(&second, "same", &["compose.yaml"]);
+    let alpha = project(&first, "alpha", &["compose.yaml"]);
+    let same_first = project(&first, "same", &["compose.yaml"]);
+    let same_second = project(&second, "same", &["compose.yaml"]);
     project(&second, "shadowed", &["compose.yaml"]);
     project(&second, "ignored", &[]);
     write_config(
@@ -132,12 +132,23 @@ fn effective_list_combines_sources_shadows_registered_names_and_marks_ambiguity(
     let output = run_dstack(&state, temp.path(), &["list"]);
     assert!(output.status.success(), "{}", text(output.stderr));
     let stdout = text(output.stdout);
-    assert!(stdout.starts_with("NAME\tSOURCE\tPATH\n"));
-    assert!(stdout.contains("alpha\tdiscovered\t"));
-    assert_eq!(stdout.matches("same\tdiscovered (ambiguous)\t").count(), 2);
-    assert_eq!(stdout.matches("shadowed\t").count(), 1);
-    assert!(stdout.contains("shadowed\tregistered\t"));
-    assert!(!stdout.contains("ignored\t"));
+    assert_eq!(
+        stdout,
+        format!(
+            concat!(
+                "NAME      SOURCE                  PATH\n",
+                "alpha     discovered              {}\n",
+                "same      discovered (ambiguous)  {}\n",
+                "same      discovered (ambiguous)  {}\n",
+                "shadowed  registered              {}\n",
+            ),
+            alpha.display(),
+            same_first.display(),
+            same_second.display(),
+            registered_project.display(),
+        )
+    );
+    assert!(!stdout.contains('\t'));
 
     let ambiguous = run_dstack(&state, temp.path(), &["-s", "same", "context", "show"]);
     assert_eq!(ambiguous.status.code(), Some(1));

@@ -1,6 +1,6 @@
 use std::{
     env,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,6 +12,7 @@ use crate::{
     discovery::discover_stacks,
     error::AppError,
     migration::{MigrationReport, migrate_registry},
+    output::{ColorPolicy, Output, Table},
     registry::{Registry, RegistryStore, StackProfile},
     resolution::{effective_stacks, resolve_stack},
 };
@@ -27,13 +28,13 @@ pub fn run(cli: Cli) -> Result<(), AppError> {
         })?;
     let stdout = io::stdout();
     let stderr = io::stderr();
-    run_with_environment(
-        cli,
-        &paths,
-        &current_dir,
-        &mut stdout.lock(),
-        &mut stderr.lock(),
-    )
+    let stdout_color = ColorPolicy::from_environment(stdout.is_terminal());
+    let stderr_color = ColorPolicy::from_environment(stderr.is_terminal());
+    let mut stdout = anstream::AutoStream::new(stdout, stdout_color.stream_choice()).lock();
+    let mut stderr = anstream::AutoStream::new(stderr, stderr_color.stream_choice()).lock();
+    let mut stdout = Output::new(&mut stdout, stdout_color);
+    let mut stderr = Output::new(&mut stderr, stderr_color);
+    run_with_outputs(cli, &paths, &current_dir, &mut stdout, &mut stderr)
 }
 
 struct RuntimeState {
@@ -42,12 +43,25 @@ struct RuntimeState {
     registry_store: RegistryStore,
 }
 
+#[cfg(test)]
 pub(crate) fn run_with_environment(
     cli: Cli,
     paths: &AppPaths,
     current_dir: &Path,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
+) -> Result<(), AppError> {
+    let mut stdout = Output::plain(stdout);
+    let mut stderr = Output::plain(stderr);
+    run_with_outputs(cli, paths, current_dir, &mut stdout, &mut stderr)
+}
+
+fn run_with_outputs(
+    cli: Cli,
+    paths: &AppPaths,
+    current_dir: &Path,
+    stdout: &mut Output<'_>,
+    stderr: &mut Output<'_>,
 ) -> Result<(), AppError> {
     let command = cli.command.ok_or(AppError::NoCommand)?;
     validate_global_options(&command, cli.stack.as_deref(), &cli.files)?;
@@ -153,7 +167,7 @@ fn validate_global_options(
     Ok(())
 }
 
-fn bootstrap(paths: &AppPaths, stderr: &mut dyn Write) -> Result<RuntimeState, AppError> {
+fn bootstrap(paths: &AppPaths, stderr: &mut Output<'_>) -> Result<RuntimeState, AppError> {
     let registry_store = RegistryStore::new(
         paths.registry_file().to_path_buf(),
         paths.registry_lock().to_path_buf(),
@@ -186,15 +200,15 @@ fn bootstrap(paths: &AppPaths, stderr: &mut dyn Write) -> Result<RuntimeState, A
 fn show_config(
     paths: &AppPaths,
     config: &DstackConfig,
-    output: &mut dyn Write,
+    output: &mut Output<'_>,
 ) -> Result<(), AppError> {
-    writeln!(output, "Config: {}", paths.config_file().display())?;
-    writeln!(output, "Version: {}", config.version)?;
-    writeln!(output, "Discovery paths:")?;
+    output.write_label_value("Config:", &paths.config_file().display().to_string())?;
+    output.write_label_value("Version:", &config.version.to_string())?;
+    output.write_label_line("Discovery paths:")?;
     for path in &config.discovery.paths {
         writeln!(output, "  - {}", path.display())?;
     }
-    writeln!(output, "Compose filenames (priority order):")?;
+    output.write_label_line("Compose filenames (priority order):")?;
     for file in &config.discovery.compose_files {
         writeln!(output, "  - {}", file.display())?;
     }
@@ -204,24 +218,19 @@ fn show_config(
 fn list_effective(
     runtime: &RuntimeState,
     paths: &AppPaths,
-    output: &mut dyn Write,
+    output: &mut Output<'_>,
 ) -> Result<(), AppError> {
     let discovered = discover_stacks(&runtime.config, paths.home_dir())?;
-    writeln!(output, "NAME\tSOURCE\tPATH")?;
+    let mut table = Table::new(["NAME", "SOURCE", "PATH"]);
     for stack in effective_stacks(&runtime.registry, &discovered) {
         let source = if stack.ambiguous {
             "discovered (ambiguous)".to_owned()
         } else {
             stack.source.to_string()
         };
-        writeln!(
-            output,
-            "{}\t{}\t{}",
-            stack.name,
-            source,
-            stack.project.display()
-        )?;
+        table.push([stack.name, source, stack.project.display().to_string()]);
     }
+    table.write(output)?;
     Ok(())
 }
 
@@ -231,7 +240,7 @@ fn show_context(
     explicit_stack: Option<&str>,
     explicit_files: &[PathBuf],
     current_dir: &Path,
-    output: &mut dyn Write,
+    output: &mut Output<'_>,
 ) -> Result<(), AppError> {
     let discovered = discover_stacks(&runtime.config, paths.home_dir())?;
     let stack = resolve_stack(
@@ -243,40 +252,39 @@ fn show_context(
     )?;
     let compose = resolve_compose_files(&stack, explicit_files, &runtime.config)?;
 
-    writeln!(output, "Stack: {}", stack.name)?;
-    writeln!(output, "Source: {}", stack.source)?;
-    writeln!(output, "Project: {}", stack.project.display())?;
-    writeln!(output, "Compose files:")?;
+    output.write_label_value("Stack:", &stack.name)?;
+    output.write_label_value("Source:", &stack.source.to_string())?;
+    output.write_label_value("Project:", &stack.project.display().to_string())?;
+    output.write_label_line("Compose files:")?;
     for file in compose.files {
         writeln!(output, "  - {}", file.display())?;
     }
     Ok(())
 }
 
-fn list_registry(registry: &Registry, output: &mut dyn Write) -> Result<(), AppError> {
-    writeln!(output, "NAME\tPATH\tFILES")?;
+fn list_registry(registry: &Registry, output: &mut Output<'_>) -> Result<(), AppError> {
+    let mut table = Table::new(["NAME", "PATH", "FILES"]);
     for profile in &registry.stacks {
-        writeln!(
-            output,
-            "{}\t{}\t{}",
-            profile.name,
-            profile.path.display(),
-            display_files(&profile.files)
-        )?;
+        table.push([
+            profile.name.clone(),
+            profile.path.display().to_string(),
+            display_files(&profile.files),
+        ]);
     }
+    table.write(output)?;
     Ok(())
 }
 
-fn show_profile(registry: &Registry, name: &str, output: &mut dyn Write) -> Result<(), AppError> {
+fn show_profile(registry: &Registry, name: &str, output: &mut Output<'_>) -> Result<(), AppError> {
     let profile = registry
         .get(name)
         .ok_or_else(|| crate::registry::RegistryError::UnknownProfile(name.to_owned()))?;
-    writeln!(output, "Name: {}", profile.name)?;
-    writeln!(output, "Path: {}", profile.path.display())?;
+    output.write_label_value("Name:", &profile.name)?;
+    output.write_label_value("Path:", &profile.path.display().to_string())?;
     if profile.files.is_empty() {
-        writeln!(output, "Files: -")?;
+        output.write_label_value("Files:", "-")?;
     } else {
-        writeln!(output, "Files:")?;
+        output.write_label_line("Files:")?;
         for file in &profile.files {
             writeln!(output, "  - {}", file.display())?;
         }
@@ -298,31 +306,22 @@ fn display_files(files: &[PathBuf]) -> String {
 
 fn write_migration_report(
     report: &MigrationReport,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
+    stdout: &mut Output<'_>,
+    stderr: &mut Output<'_>,
 ) -> Result<(), AppError> {
-    writeln!(stdout, "Legacy source: {}", report.source.display())?;
-    writeln!(stdout, "V2 destination: {}", report.destination.display())?;
-    writeln!(
-        stdout,
-        "Mode: {}",
-        if report.dry_run { "dry-run" } else { "write" }
+    stdout.write_label_value("Legacy source:", &report.source.display().to_string())?;
+    stdout.write_label_value("V2 destination:", &report.destination.display().to_string())?;
+    stdout.write_label_value("Mode:", if report.dry_run { "dry-run" } else { "write" })?;
+    stdout.write_label_value("Discovered:", &report.discovered.to_string())?;
+    stdout.write_label_value(
+        "Accepted:",
+        &(report.added + report.already_present).to_string(),
     )?;
-    writeln!(stdout, "Discovered: {}", report.discovered)?;
-    writeln!(
-        stdout,
-        "Accepted: {}",
-        report.added + report.already_present
-    )?;
-    writeln!(stdout, "Added: {}", report.added)?;
-    writeln!(stdout, "Already present: {}", report.already_present)?;
-    writeln!(stdout, "Skipped: {}", report.skipped.len())?;
-    writeln!(stdout, "Conflicts: {}", report.conflicts.len())?;
-    writeln!(
-        stdout,
-        "Written: {}",
-        if report.wrote { "yes" } else { "no" }
-    )?;
+    stdout.write_label_value("Added:", &report.added.to_string())?;
+    stdout.write_label_value("Already present:", &report.already_present.to_string())?;
+    stdout.write_label_value("Skipped:", &report.skipped.len().to_string())?;
+    stdout.write_label_value("Conflicts:", &report.conflicts.len().to_string())?;
+    stdout.write_label_value("Written:", if report.wrote { "yes" } else { "no" })?;
 
     for issue in &report.skipped {
         writeln!(
@@ -406,7 +405,7 @@ mod tests {
 
         run_with_environment(cli, &paths, temp.path(), &mut stdout, &mut stderr).unwrap();
 
-        assert_eq!(stdout, b"NAME\tPATH\tFILES\n");
+        assert_eq!(stdout, b"NAME  PATH  FILES\n");
         assert!(stderr.is_empty());
         assert!(paths.config_file().is_file());
         assert!(paths.registry_file().is_file());

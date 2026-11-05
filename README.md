@@ -28,6 +28,9 @@ The first non-help operation creates `~/.config/dstack/dstack.conf` and a
 versioned empty `registry.toml` when absent. Set `DSTACK_CONFIG_DIR` to a
 temporary directory for development and tests; it replaces that root
 completely. These v2 commands are not yet a released user interface.
+V2 table output aligns by visible text width and uses restrained color only on
+an interactive terminal; redirected output is plain, and `NO_COLOR` disables
+optional styling.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
