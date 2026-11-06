@@ -1,5 +1,7 @@
 mod bootstrap;
 mod dispatch;
+mod operations;
+mod target;
 
 use std::{
     env,
@@ -106,7 +108,7 @@ mod tests {
         AppError, AppOutcome, Cli,
         config::AppPaths,
         process::testing::RecordingExecutor,
-        registry::{Registry, StackProfile},
+        registry::{Registry, RegistryStore, StackProfile},
     };
 
     fn paths(temp: &TempDir) -> AppPaths {
@@ -380,5 +382,104 @@ mod tests {
                 .contains("could not start process 'docker'")
         );
         assert!(error.to_string().contains("docker is not installed"));
+    }
+
+    #[test]
+    fn operations_reuse_registered_discovered_and_explicit_file_resolution() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        let registered = temp.path().join("registered project");
+        fs::create_dir_all(&registered).unwrap();
+        for file in ["compose.yaml", "compose.prod.yaml", "override file.yaml"] {
+            fs::write(registered.join(file), "services: {}\n").unwrap();
+        }
+        let store = RegistryStore::new(
+            paths.registry_file().to_path_buf(),
+            paths.registry_lock().to_path_buf(),
+        );
+        store
+            .add(
+                StackProfile::for_registration(
+                    "registered".to_owned(),
+                    registered.clone(),
+                    ["compose.yaml", "compose.prod.yaml"]
+                        .map(PathBuf::from)
+                        .to_vec(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let discovered = paths.home_dir().join("projects").join("discovered");
+        fs::create_dir_all(&discovered).unwrap();
+        fs::write(discovered.join("compose.yaml"), "services: {}\n").unwrap();
+        let unrelated_cwd = local_project(&temp);
+        let executor = RecordingExecutor::default();
+
+        for argv in [
+            vec!["dstack", "-s", "registered", "up"],
+            vec![
+                "dstack",
+                "-s",
+                "registered",
+                "--file",
+                "override file.yaml",
+                "stop",
+                "php",
+            ],
+            vec!["dstack", "start", "-s", "discovered"],
+        ] {
+            run_with_executor(
+                Cli::try_parse_from(argv).unwrap(),
+                &paths,
+                &unrelated_cwd,
+                &executor,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+            .unwrap();
+        }
+
+        let requests = executor.requests();
+        assert_eq!(
+            requests[0].current_dir,
+            fs::canonicalize(&registered).unwrap()
+        );
+        assert_eq!(
+            requests[0].args,
+            [
+                OsString::from("compose"),
+                OsString::from("--file"),
+                registered.join("compose.yaml").into_os_string(),
+                OsString::from("--file"),
+                registered.join("compose.prod.yaml").into_os_string(),
+                OsString::from("up"),
+                OsString::from("-d"),
+                OsString::from("--build"),
+            ]
+        );
+        assert_eq!(
+            requests[1].args,
+            [
+                OsString::from("compose"),
+                OsString::from("--file"),
+                registered.join("override file.yaml").into_os_string(),
+                OsString::from("stop"),
+                OsString::from("php"),
+            ]
+        );
+        assert_eq!(requests[2].current_dir, discovered);
+        assert_eq!(
+            requests[2].args,
+            [
+                OsString::from("compose"),
+                OsString::from("--file"),
+                requests[2]
+                    .current_dir
+                    .join("compose.yaml")
+                    .into_os_string(),
+                OsString::from("start"),
+            ]
+        );
     }
 }

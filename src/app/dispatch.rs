@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use crate::{
     Cli,
     cli::{Command, ConfigCommand, ContextCommand, MigrationCommand, RegistryCommand},
-    compose::commands::raw,
     config::{AppPaths, commands as config_commands},
     context::{commands::show as show_context, resolve_context},
     error::AppError,
@@ -15,7 +14,11 @@ use crate::{
     stack::commands::list as list_stacks,
 };
 
-use super::bootstrap::RuntimeState;
+use super::{
+    bootstrap::RuntimeState,
+    operations::{self, Environment, Request},
+    target::merge_stack_options,
+};
 
 pub(crate) fn run(
     cli: Cli,
@@ -30,21 +33,24 @@ pub(crate) fn run(
     validate_global_options(&command, cli.stack.as_deref(), &cli.files)?;
     let root_stack = cli.stack;
     let root_files = cli.files;
+    let command = match Request::from_command(command) {
+        Ok(request) => {
+            return run_operation(
+                request,
+                root_stack,
+                root_files,
+                paths,
+                current_dir,
+                runtime,
+                executor,
+            );
+        }
+        Err(command) => command,
+    };
 
     match command {
         Command::List => list_stacks::run(&runtime.config, &runtime.registry, paths, stdout)
             .map(|()| AppOutcome::Success),
-        Command::Compose(arguments) => {
-            let context = resolve_context(
-                &runtime.config,
-                &runtime.registry,
-                paths.home_dir(),
-                root_stack.as_deref(),
-                &root_files,
-                current_dir,
-            )?;
-            raw::run(&context, arguments.args, executor)
-        }
         Command::Config(arguments) => (match arguments.command {
             ConfigCommand::Path => config_commands::path::run(paths, stdout),
             ConfigCommand::Show => config_commands::show::run(paths, &runtime.config, stdout),
@@ -92,20 +98,39 @@ pub(crate) fn run(
             )
             .map(|()| AppOutcome::Success),
         },
+        Command::Compose(_)
+        | Command::Up(_)
+        | Command::Start(_)
+        | Command::Stop(_)
+        | Command::Restart(_)
+        | Command::Down(_)
+        | Command::Recreate(_)
+        | Command::Pull(_)
+        | Command::Update(_)
+        | Command::Rebuild(_) => unreachable!("operational command was routed above"),
     }
 }
 
-fn merge_stack_options(
-    root: Option<String>,
-    command: Option<String>,
-) -> Result<Option<String>, AppError> {
-    match (root, command) {
-        (Some(_), Some(_)) => Err(AppError::InvalidOptions(
-            "--stack/-s may be supplied only once".to_owned(),
-        )),
-        (Some(value), None) | (None, Some(value)) => Ok(Some(value)),
-        (None, None) => Ok(None),
-    }
+fn run_operation(
+    request: Request,
+    root_stack: Option<String>,
+    root_files: Vec<PathBuf>,
+    paths: &AppPaths,
+    current_dir: &Path,
+    runtime: &RuntimeState,
+    executor: &dyn ProcessExecutor,
+) -> Result<AppOutcome, AppError> {
+    operations::run(
+        request,
+        root_stack,
+        root_files,
+        Environment {
+            paths,
+            current_dir,
+            runtime,
+            executor,
+        },
+    )
 }
 
 fn validate_global_options(
@@ -113,11 +138,33 @@ fn validate_global_options(
     stack: Option<&str>,
     files: &[PathBuf],
 ) -> Result<(), AppError> {
-    let supports_stack = matches!(command, Command::Context(_) | Command::Compose(_));
+    let supports_stack = matches!(
+        command,
+        Command::Context(_)
+            | Command::Compose(_)
+            | Command::Up(_)
+            | Command::Start(_)
+            | Command::Stop(_)
+            | Command::Restart(_)
+            | Command::Down(_)
+            | Command::Recreate(_)
+            | Command::Pull(_)
+            | Command::Update(_)
+            | Command::Rebuild(_)
+    );
     let supports_files = matches!(
         command,
         Command::Context(_)
             | Command::Compose(_)
+            | Command::Up(_)
+            | Command::Start(_)
+            | Command::Stop(_)
+            | Command::Restart(_)
+            | Command::Down(_)
+            | Command::Recreate(_)
+            | Command::Pull(_)
+            | Command::Update(_)
+            | Command::Rebuild(_)
             | Command::Registry(crate::cli::RegistryArgs {
                 command: RegistryCommand::Add { .. }
             })

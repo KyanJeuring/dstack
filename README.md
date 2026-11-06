@@ -11,9 +11,10 @@
 > executable remains `dstack`. The package is not published yet; do not replace
 > an existing v1 installation with the development binary.
 
-The in-development v2 foundation currently provides persistent registry,
-configuration, discovery, and read-only context planning without invoking
-Docker. Developer-facing commands include:
+The in-development v2 foundation provides persistent registry, configuration,
+discovery, context planning, and native Docker Compose execution. The process
+boundary uses exact OS arguments and never reconstructs a shell command.
+Developer-facing commands include:
 
 ```text
 dstack config path
@@ -22,6 +23,13 @@ dstack registry list|show|add|remove
 dstack migrate registry [--dry-run]
 dstack list
 dstack [-s NAME] [--file FILE]... context show
+dstack [-s NAME] [--file FILE]... compose [--] [ARGS...]
+dstack [-s NAME] [--file FILE]... up [--remove-orphans] [SERVICE...]
+dstack [-s NAME] [--file FILE]... start|stop|restart|pull [SERVICE...]
+dstack [-s NAME] [--file FILE]... down [--volumes]
+dstack [-s NAME] [--file FILE]... recreate [--volumes]
+dstack [-s NAME] [--file FILE]... update [SERVICE...]
+dstack [-s NAME] [--file FILE]... rebuild [--no-cache] [SERVICE...]
 ```
 
 The first non-help operation creates `~/.config/dstack/dstack.conf` and a
@@ -31,6 +39,13 @@ completely. These v2 commands are not yet a released user interface.
 V2 table output aligns by visible text width and uses restrained color only on
 an interactive terminal; redirected output is plain, and `NO_COLOR` disables
 optional styling.
+
+Raw `dstack compose` forwards Compose arguments without lifecycle defaults.
+Use the hard `--` boundary when a raw Compose argument is also owned by
+DStack, such as `dstack compose -- --file special.yaml up`. The typed
+`dstack up` command runs `up -d --build`; `update`, `rebuild`, and `recreate`
+are fail-fast multi-step operations. Docker stdin, stdout, and stderr remain
+inherited, and DStack returns Docker's numeric exit status when available.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

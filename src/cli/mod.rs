@@ -1,6 +1,7 @@
 mod compose;
 mod config;
 mod context;
+mod lifecycle;
 mod migration;
 mod registry;
 
@@ -11,6 +12,7 @@ use clap::{Parser, Subcommand};
 pub use compose::ComposeArgs;
 pub use config::{ConfigArgs, ConfigCommand};
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
+pub use lifecycle::{DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs};
 pub use migration::{MigrationArgs, MigrationCommand};
 pub use registry::{RegistryArgs, RegistryCommand};
 
@@ -40,6 +42,24 @@ pub enum Command {
     List,
     /// Run raw Docker Compose arguments against the resolved stack.
     Compose(ComposeArgs),
+    /// Create and start services in detached, build-aware mode.
+    Up(UpArgs),
+    /// Start existing service containers.
+    Start(ServicesArgs),
+    /// Stop service containers without removing them.
+    Stop(ServicesArgs),
+    /// Restart service containers without recreating them.
+    Restart(ServicesArgs),
+    /// Stop and remove the stack.
+    Down(DownArgs),
+    /// Tear down and recreate the whole stack.
+    Recreate(RecreateArgs),
+    /// Pull service images.
+    Pull(ServicesArgs),
+    /// Pull images and start updated services.
+    Update(ServicesArgs),
+    /// Build images and start rebuilt services.
+    Rebuild(RebuildArgs),
     /// Inspect DStack's user configuration.
     Config(ConfigArgs),
     /// Inspect the resolved stack and Compose-file context.
@@ -251,6 +271,74 @@ mod tests {
             panic!("compose command should parse");
         };
         assert_eq!(compose.args, ["logs", "-f"].map(std::ffi::OsString::from));
+    }
+
+    #[test]
+    fn typed_operations_accept_target_options_before_or_after_the_command() {
+        for argv in [
+            vec![
+                "dstack",
+                "-s",
+                "jellyfin",
+                "--file",
+                "compose.yaml",
+                "up",
+                "php",
+                "nginx",
+            ],
+            vec![
+                "dstack",
+                "up",
+                "php",
+                "nginx",
+                "--file",
+                "compose.yaml",
+                "-s",
+                "jellyfin",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(argv).unwrap();
+            let root_stack = cli.stack;
+            let root_files = cli.files;
+            let Some(Command::Up(arguments)) = cli.command else {
+                panic!("up command should parse");
+            };
+            assert_eq!(
+                root_stack.as_deref().or(arguments.target.stack.as_deref()),
+                Some("jellyfin")
+            );
+            assert_eq!(
+                [root_files, arguments.target.files].concat(),
+                [PathBuf::from("compose.yaml")]
+            );
+            assert_eq!(
+                arguments.services,
+                ["php", "nginx"].map(std::ffi::OsString::from)
+            );
+        }
+    }
+
+    #[test]
+    fn service_operands_are_never_guessed_as_stack_or_command_names() {
+        let cli = Cli::try_parse_from([
+            "dstack",
+            "-s",
+            "registered",
+            "restart",
+            "down",
+            "restart",
+            "down",
+        ])
+        .unwrap();
+        let Some(Command::Restart(arguments)) = cli.command else {
+            panic!("restart command should parse");
+        };
+        assert_eq!(
+            arguments.services,
+            ["down", "restart", "down"].map(std::ffi::OsString::from)
+        );
+        assert!(Cli::try_parse_from(["dstack", "registered", "up"]).is_err());
+        assert!(Cli::try_parse_from(["dstack", "down", "php"]).is_err());
     }
 
     #[test]
