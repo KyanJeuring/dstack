@@ -135,7 +135,7 @@ fn canonical_registry_wins_without_merging_phase2_state() {
 fn raw_compose_executes_exact_native_argv_without_typed_defaults() {
     let temp = TempDir::new().unwrap();
     let paths = paths(&temp);
-    let project = local_project(&temp);
+    let project = fs::canonicalize(local_project(&temp)).unwrap();
     let executor = RecordingExecutor::default();
     let cases = [
         vec!["ps"],
@@ -199,7 +199,7 @@ fn raw_compose_executes_exact_native_argv_without_typed_defaults() {
 fn hard_boundary_preserves_compose_file_and_stack_shaped_raw_arguments() {
     let temp = TempDir::new().unwrap();
     let paths = paths(&temp);
-    let project = local_project(&temp);
+    let project = fs::canonicalize(local_project(&temp)).unwrap();
     let executor = RecordingExecutor::default();
     let cli = Cli::try_parse_from([
         "dstack",
@@ -289,6 +289,7 @@ fn operations_reuse_registered_discovered_and_explicit_file_resolution() {
     for file in ["compose.yaml", "compose.prod.yaml", "override file.yaml"] {
         fs::write(registered.join(file), "services: {}\n").unwrap();
     }
+    let registered = fs::canonicalize(registered).unwrap();
     let store = RegistryStore::new(
         paths.registry_file().to_path_buf(),
         paths.registry_lock().to_path_buf(),
@@ -309,7 +310,8 @@ fn operations_reuse_registered_discovered_and_explicit_file_resolution() {
     let discovered = paths.home_dir().join("projects").join("discovered");
     fs::create_dir_all(&discovered).unwrap();
     fs::write(discovered.join("compose.yaml"), "services: {}\n").unwrap();
-    let unrelated_cwd = local_project(&temp);
+    let discovered = fs::canonicalize(discovered).unwrap();
+    let unrelated_cwd = fs::canonicalize(local_project(&temp)).unwrap();
     let executor = RecordingExecutor::default();
 
     for argv in [

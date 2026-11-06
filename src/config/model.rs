@@ -31,13 +31,13 @@ pub struct DiscoveryConfig {
 
 impl DstackConfig {
     pub fn defaults() -> Self {
-        let mut paths = vec![
+        let paths = vec![
             PathBuf::from("~/projects"),
             PathBuf::from("~/src"),
             PathBuf::from("~/code"),
+            #[cfg(unix)]
+            PathBuf::from("/opt/services"),
         ];
-        #[cfg(unix)]
-        paths.push(PathBuf::from("/opt/services"));
         Self {
             version: CONFIG_SCHEMA_VERSION,
             discovery: DiscoveryConfig {
