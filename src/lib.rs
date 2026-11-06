@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod error;
 pub mod migration;
 pub mod output;
+pub mod process;
 pub mod registry;
 pub mod resolution;
 pub mod stack;
