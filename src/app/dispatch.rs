@@ -3,11 +3,14 @@ use std::path::{Path, PathBuf};
 use crate::{
     Cli,
     cli::{Command, ConfigCommand, ContextCommand, MigrationCommand, RegistryCommand},
+    compose::commands::raw,
     config::{AppPaths, commands as config_commands},
     context::{commands::show as show_context, resolve_context},
     error::AppError,
     migration::command as migrate_registry,
+    outcome::AppOutcome,
     output::Output,
+    process::ProcessExecutor,
     registry::commands as registry_commands,
     stack::commands::list as list_stacks,
 };
@@ -19,20 +22,34 @@ pub(crate) fn run(
     paths: &AppPaths,
     current_dir: &Path,
     runtime: &RuntimeState,
+    executor: &dyn ProcessExecutor,
     stdout: &mut Output<'_>,
     stderr: &mut Output<'_>,
-) -> Result<(), AppError> {
+) -> Result<AppOutcome, AppError> {
     let command = cli.command.ok_or(AppError::NoCommand)?;
     validate_global_options(&command, cli.stack.as_deref(), &cli.files)?;
     let root_stack = cli.stack;
     let root_files = cli.files;
 
     match command {
-        Command::List => list_stacks::run(&runtime.config, &runtime.registry, paths, stdout),
-        Command::Config(arguments) => match arguments.command {
+        Command::List => list_stacks::run(&runtime.config, &runtime.registry, paths, stdout)
+            .map(|()| AppOutcome::Success),
+        Command::Compose(arguments) => {
+            let context = resolve_context(
+                &runtime.config,
+                &runtime.registry,
+                paths.home_dir(),
+                root_stack.as_deref(),
+                &root_files,
+                current_dir,
+            )?;
+            raw::run(&context, arguments.args, executor)
+        }
+        Command::Config(arguments) => (match arguments.command {
             ConfigCommand::Path => config_commands::path::run(paths, stdout),
             ConfigCommand::Show => config_commands::show::run(paths, &runtime.config, stdout),
-        },
+        })
+        .map(|()| AppOutcome::Success),
         Command::Context(arguments) => match arguments.command {
             ContextCommand::Show(options) => {
                 let stack = merge_stack_options(root_stack, options.stack)?;
@@ -45,7 +62,7 @@ pub(crate) fn run(
                     &files,
                     current_dir,
                 )?;
-                show_context::run(context, stdout)
+                show_context::run(context, stdout).map(|()| AppOutcome::Success)
             }
         },
         Command::Registry(arguments) => match arguments.command {
@@ -63,7 +80,8 @@ pub(crate) fn run(
             RegistryCommand::Remove { name } => {
                 registry_commands::remove::run(&runtime.registry_store, &name, stdout)
             }
-        },
+        }
+        .map(|()| AppOutcome::Success),
         Command::Migrate(arguments) => match arguments.command {
             MigrationCommand::Registry { dry_run } => migrate_registry::run(
                 &runtime.registry_store,
@@ -71,7 +89,8 @@ pub(crate) fn run(
                 dry_run,
                 stdout,
                 stderr,
-            ),
+            )
+            .map(|()| AppOutcome::Success),
         },
     }
 }
@@ -94,22 +113,23 @@ fn validate_global_options(
     stack: Option<&str>,
     files: &[PathBuf],
 ) -> Result<(), AppError> {
-    let supports_stack = matches!(command, Command::Context(_));
+    let supports_stack = matches!(command, Command::Context(_) | Command::Compose(_));
     let supports_files = matches!(
         command,
         Command::Context(_)
+            | Command::Compose(_)
             | Command::Registry(crate::cli::RegistryArgs {
                 command: RegistryCommand::Add { .. }
             })
     );
     if stack.is_some() && !supports_stack {
         return Err(AppError::InvalidOptions(
-            "--stack/-s is only supported by stack-context operations in Phase 3".to_owned(),
+            "--stack/-s is only supported by stack-context operations".to_owned(),
         ));
     }
     if !files.is_empty() && !supports_files {
         return Err(AppError::InvalidOptions(
-            "--file is only supported by 'context show' and 'registry add' in Phase 3".to_owned(),
+            "--file is only supported by stack-context operations and 'registry add'".to_owned(),
         ));
     }
     Ok(())

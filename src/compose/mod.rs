@@ -1,5 +1,6 @@
 //! Compose-file resolution and Docker Compose invocation construction.
 
+pub mod commands;
 mod invocation;
 mod resolution;
 

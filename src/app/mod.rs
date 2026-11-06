@@ -14,11 +14,13 @@ use crate::{
     Cli,
     config::AppPaths,
     error::AppError,
+    outcome::AppOutcome,
     output::{ColorPolicy, Output},
+    process::{NativeProcessExecutor, ProcessExecutor},
 };
 
 /// Runs the v2 application after CLI parsing.
-pub fn run(cli: Cli) -> Result<(), AppError> {
+pub fn run(cli: Cli) -> Result<AppOutcome, AppError> {
     let paths = AppPaths::discover()?;
     let current_dir =
         env::current_dir().map_err(|source| crate::resolution::ResolutionError::Io {
@@ -34,7 +36,14 @@ pub fn run(cli: Cli) -> Result<(), AppError> {
     let mut stderr = anstream::AutoStream::new(stderr, stderr_color.stream_choice()).lock();
     let mut stdout = Output::new(&mut stdout, stdout_color);
     let mut stderr = Output::new(&mut stderr, stderr_color);
-    run_with_outputs(cli, &paths, &current_dir, &mut stdout, &mut stderr)
+    run_with_outputs(
+        cli,
+        &paths,
+        &current_dir,
+        &NativeProcessExecutor,
+        &mut stdout,
+        &mut stderr,
+    )
 }
 
 #[cfg(test)]
@@ -44,37 +53,59 @@ pub(crate) fn run_with_environment(
     current_dir: &Path,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<(), AppError> {
+) -> Result<AppOutcome, AppError> {
     let mut stdout = Output::plain(stdout);
     let mut stderr = Output::plain(stderr);
-    run_with_outputs(cli, paths, current_dir, &mut stdout, &mut stderr)
+    run_with_outputs(
+        cli,
+        paths,
+        current_dir,
+        &NativeProcessExecutor,
+        &mut stdout,
+        &mut stderr,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn run_with_executor(
+    cli: Cli,
+    paths: &AppPaths,
+    current_dir: &Path,
+    executor: &dyn ProcessExecutor,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<AppOutcome, AppError> {
+    let mut stdout = Output::plain(stdout);
+    let mut stderr = Output::plain(stderr);
+    run_with_outputs(cli, paths, current_dir, executor, &mut stdout, &mut stderr)
 }
 
 fn run_with_outputs(
     cli: Cli,
     paths: &AppPaths,
     current_dir: &Path,
+    executor: &dyn ProcessExecutor,
     stdout: &mut Output<'_>,
     stderr: &mut Output<'_>,
-) -> Result<(), AppError> {
+) -> Result<AppOutcome, AppError> {
     if cli.command.is_none() {
         return Err(AppError::NoCommand);
     }
     let runtime = bootstrap::run(paths, stderr)?;
-    dispatch::run(cli, paths, current_dir, &runtime, stdout, stderr)
+    dispatch::run(cli, paths, current_dir, &runtime, executor, stdout, stderr)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{ffi::OsString, fs, io, path::PathBuf};
 
-    use clap::Parser;
     use tempfile::TempDir;
 
-    use super::run_with_environment;
+    use super::{run_with_environment, run_with_executor};
     use crate::{
-        AppError, Cli,
+        AppError, AppOutcome, Cli,
         config::AppPaths,
+        process::testing::RecordingExecutor,
         registry::{Registry, StackProfile},
     };
 
@@ -85,6 +116,13 @@ mod tests {
             temp.path().join("legacy/registry"),
             None,
         )
+    }
+
+    fn local_project(temp: &TempDir) -> PathBuf {
+        let project = temp.path().join("project with spaces").join("café");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join("compose.yaml"), "services: {}\n").unwrap();
+        project
     }
 
     #[test]
@@ -192,5 +230,155 @@ mod tests {
             fs::read(paths.phase2_registry().unwrap()).unwrap(),
             b"not = [valid"
         );
+    }
+
+    #[test]
+    fn raw_compose_executes_exact_native_argv_without_typed_defaults() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        let project = local_project(&temp);
+        let executor = RecordingExecutor::default();
+        let cases = [
+            vec!["ps"],
+            vec!["up"],
+            vec!["up", "-d"],
+            vec!["down"],
+            vec!["down", "-v"],
+            vec!["logs", "-f"],
+            vec!["config"],
+            vec![
+                "build",
+                "--label",
+                "value with spaces",
+                "--label",
+                "Unicode-项目",
+                "--no-cache",
+            ],
+        ];
+
+        for raw in &cases {
+            let cli =
+                Cli::try_parse_from(["dstack", "compose"].into_iter().chain(raw.iter().copied()))
+                    .unwrap();
+            let outcome = run_with_executor(
+                cli,
+                &paths,
+                &project,
+                &executor,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                outcome,
+                AppOutcome::Child(crate::process::ProcessStatus::from_code(0))
+            );
+        }
+
+        let requests = executor.requests();
+        assert_eq!(requests.len(), cases.len());
+        for (request, raw) in requests.iter().zip(cases) {
+            let expected = [
+                vec![
+                    OsString::from("compose"),
+                    OsString::from("--file"),
+                    project.join("compose.yaml").into_os_string(),
+                ],
+                raw.into_iter().map(OsString::from).collect(),
+            ]
+            .concat();
+            assert_eq!(request.program, OsString::from("docker"));
+            assert_eq!(request.args, expected);
+            assert_eq!(request.current_dir, project);
+        }
+
+        let raw_up = &requests[1].args;
+        assert!(!raw_up.contains(&OsString::from("-d")));
+        assert!(!raw_up.contains(&OsString::from("--build")));
+    }
+
+    #[test]
+    fn hard_boundary_preserves_compose_file_and_stack_shaped_raw_arguments() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        let project = local_project(&temp);
+        let executor = RecordingExecutor::default();
+        let cli = Cli::try_parse_from([
+            "dstack",
+            "compose",
+            "--",
+            "down",
+            "--file",
+            "special file.yaml",
+            "-s",
+            "compose-value",
+        ])
+        .unwrap();
+
+        run_with_executor(
+            cli,
+            &paths,
+            &project,
+            &executor,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            executor.requests()[0].args,
+            [
+                OsString::from("compose"),
+                OsString::from("--file"),
+                project.join("compose.yaml").into_os_string(),
+                OsString::from("down"),
+                OsString::from("--file"),
+                OsString::from("special file.yaml"),
+                OsString::from("-s"),
+                OsString::from("compose-value"),
+            ]
+        );
+    }
+
+    #[test]
+    fn raw_compose_returns_child_status_and_maps_spawn_errors_separately() {
+        let temp = TempDir::new().unwrap();
+        let paths = paths(&temp);
+        let project = local_project(&temp);
+        let executor = RecordingExecutor::default();
+        executor.push_status(17);
+
+        let outcome = run_with_executor(
+            Cli::try_parse_from(["dstack", "compose", "ps"]).unwrap(),
+            &paths,
+            &project,
+            &executor,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            outcome,
+            AppOutcome::Child(crate::process::ProcessStatus::from_code(17))
+        );
+
+        let executor = RecordingExecutor::default();
+        executor.push_spawn_error(io::ErrorKind::NotFound, "docker is not installed");
+        let error = run_with_executor(
+            Cli::try_parse_from(["dstack", "compose", "ps"]).unwrap(),
+            &paths,
+            &project,
+            &executor,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, AppError::Process(_)));
+        assert!(
+            error
+                .to_string()
+                .contains("could not start process 'docker'")
+        );
+        assert!(error.to_string().contains("docker is not installed"));
     }
 }

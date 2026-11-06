@@ -1,12 +1,14 @@
+mod compose;
 mod config;
 mod context;
 mod migration;
 mod registry;
 
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 
+pub use compose::ComposeArgs;
 pub use config::{ConfigArgs, ConfigCommand};
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
 pub use migration::{MigrationArgs, MigrationCommand};
@@ -36,6 +38,8 @@ pub struct Cli {
 pub enum Command {
     /// Show all effective registered and discovered stacks.
     List,
+    /// Run raw Docker Compose arguments against the resolved stack.
+    Compose(ComposeArgs),
     /// Inspect DStack's user configuration.
     Config(ConfigArgs),
     /// Inspect the resolved stack and Compose-file context.
@@ -46,11 +50,25 @@ pub enum Command {
     Migrate(MigrationArgs),
 }
 
+impl Cli {
+    pub fn parse() -> Self {
+        <Self as Parser>::parse_from(compose::normalize_invocation(std::env::args_os()))
+    }
+
+    pub fn try_parse_from<I, T>(arguments: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString>,
+    {
+        <Self as Parser>::try_parse_from(compose::normalize_invocation(arguments))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use clap::{CommandFactory, Parser};
+    use clap::CommandFactory;
 
     use super::{Cli, Command, ContextCommand, MigrationCommand, RegistryCommand};
 
@@ -175,6 +193,64 @@ mod tests {
                 PathBuf::from("compose.prod.yaml")
             ]
         );
+    }
+
+    #[test]
+    fn raw_compose_preserves_args_and_recognizes_globals_before_boundary() {
+        let cli = Cli::try_parse_from([
+            "dstack",
+            "compose",
+            "down",
+            "--file",
+            "compose.prod.yaml",
+            "-s",
+            "jellyfin",
+            "-v",
+        ])
+        .unwrap();
+
+        assert_eq!(cli.stack.as_deref(), Some("jellyfin"));
+        assert_eq!(cli.files, [PathBuf::from("compose.prod.yaml")]);
+        let Some(Command::Compose(compose)) = cli.command else {
+            panic!("compose command should parse");
+        };
+        assert_eq!(compose.args, ["down", "-v"].map(std::ffi::OsString::from));
+    }
+
+    #[test]
+    fn hard_boundary_makes_every_following_value_raw() {
+        let cli = Cli::try_parse_from([
+            "dstack",
+            "-s",
+            "jellyfin",
+            "compose",
+            "--",
+            "down",
+            "--file",
+            "special.yaml",
+            "-s",
+            "raw-stack",
+        ])
+        .unwrap();
+
+        assert_eq!(cli.stack.as_deref(), Some("jellyfin"));
+        assert!(cli.files.is_empty());
+        let Some(Command::Compose(compose)) = cli.command else {
+            panic!("compose command should parse");
+        };
+        assert_eq!(
+            compose.args,
+            ["down", "--file", "special.yaml", "-s", "raw-stack"].map(std::ffi::OsString::from)
+        );
+    }
+
+    #[test]
+    fn compose_short_f_is_always_raw() {
+        let cli = Cli::try_parse_from(["dstack", "compose", "logs", "-f"]).unwrap();
+        let Some(Command::Compose(compose)) = cli.command else {
+            panic!("compose command should parse");
+        };
+        assert_eq!(compose.args, ["logs", "-f"].map(std::ffi::OsString::from));
     }
 
     #[test]

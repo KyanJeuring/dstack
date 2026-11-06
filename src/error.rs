@@ -2,7 +2,8 @@ use std::{fmt, io, process::ExitCode};
 
 use crate::{
     compose::ComposeError, config::ConfigError, discovery::DiscoveryError,
-    migration::MigrationError, registry::RegistryError, resolution::ResolutionError,
+    migration::MigrationError, process::ProcessError, registry::RegistryError,
+    resolution::ResolutionError,
 };
 
 #[derive(Debug)]
@@ -15,6 +16,7 @@ pub enum AppError {
     Discovery(DiscoveryError),
     Resolution(ResolutionError),
     Compose(ComposeError),
+    Process(ProcessError),
     MigrationIncomplete { skipped: usize, conflicts: usize },
     Output(io::Error),
 }
@@ -29,6 +31,7 @@ impl AppError {
             | Self::Discovery(_)
             | Self::Resolution(_)
             | Self::Compose(_)
+            | Self::Process(_)
             | Self::MigrationIncomplete { .. }
             | Self::Output(_) => ExitCode::FAILURE,
         }
@@ -47,6 +50,7 @@ impl fmt::Display for AppError {
             Self::Discovery(error) => error.fmt(formatter),
             Self::Resolution(error) => error.fmt(formatter),
             Self::Compose(error) => error.fmt(formatter),
+            Self::Process(error) => error.fmt(formatter),
             Self::MigrationIncomplete { skipped, conflicts } => write!(
                 formatter,
                 "legacy registry migration completed with {skipped} skipped entr{} and {conflicts} conflict{}",
@@ -67,6 +71,7 @@ impl std::error::Error for AppError {
             Self::Discovery(error) => Some(error),
             Self::Resolution(error) => Some(error),
             Self::Compose(error) => Some(error),
+            Self::Process(error) => Some(error),
             Self::Output(error) => Some(error),
             Self::NoCommand | Self::InvalidOptions(_) | Self::MigrationIncomplete { .. } => None,
         }
@@ -106,6 +111,12 @@ impl From<ResolutionError> for AppError {
 impl From<ComposeError> for AppError {
     fn from(error: ComposeError) -> Self {
         Self::Compose(error)
+    }
+}
+
+impl From<ProcessError> for AppError {
+    fn from(error: ProcessError) -> Self {
+        Self::Process(error)
     }
 }
 
