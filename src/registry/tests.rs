@@ -287,6 +287,17 @@ fn held_lock_prevents_mutation_and_preserves_registry() {
 }
 
 #[test]
+fn registry_lock_can_be_reacquired_immediately_after_guard_drop() {
+    let temp = TempDir::new().unwrap();
+    let store = store(&temp);
+
+    for _ in 0..100 {
+        let lock = store.acquire_lock().unwrap();
+        drop(lock);
+    }
+}
+
+#[test]
 fn readers_observe_complete_registry_while_mutation_lock_is_held() {
     let temp = TempDir::new().unwrap();
     let store = store(&temp);

@@ -8,6 +8,14 @@ use atomic_write_file::AtomicWriteFile;
 
 use super::{Registry, RegistryError, StackProfile};
 
+pub(crate) struct RegistryLock(File);
+
+impl Drop for RegistryLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RegistryStore {
     registry_path: PathBuf,
@@ -67,7 +75,7 @@ impl RegistryStore {
         Ok(result)
     }
 
-    pub(crate) fn acquire_lock(&self) -> Result<File, RegistryError> {
+    pub(crate) fn acquire_lock(&self) -> Result<RegistryLock, RegistryError> {
         let parent = self.parent_directory()?;
         fs::create_dir_all(parent).map_err(|source| RegistryError::Io {
             action: "create registry directory",
@@ -86,7 +94,7 @@ impl RegistryStore {
                 source,
             })?;
         match lock.try_lock() {
-            Ok(()) => Ok(lock),
+            Ok(()) => Ok(RegistryLock(lock)),
             Err(std::fs::TryLockError::WouldBlock) => {
                 Err(RegistryError::LockBusy(self.lock_path.clone()))
             }
