@@ -1,4 +1,4 @@
-use std::{fmt, io, process::ExitCode};
+use std::{ffi::OsString, fmt, io, process::ExitCode};
 
 use crate::{
     compose::ComposeError, config::ConfigError, discovery::DiscoveryError,
@@ -17,6 +17,7 @@ pub enum AppError {
     Resolution(ResolutionError),
     Compose(ComposeError),
     Process(ProcessError),
+    InteractiveShellUnavailable { service: OsString, tried: String },
     MigrationIncomplete { skipped: usize, conflicts: usize },
     Output(io::Error),
 }
@@ -32,6 +33,7 @@ impl AppError {
             | Self::Resolution(_)
             | Self::Compose(_)
             | Self::Process(_)
+            | Self::InteractiveShellUnavailable { .. }
             | Self::MigrationIncomplete { .. }
             | Self::Output(_) => ExitCode::FAILURE,
         }
@@ -51,6 +53,11 @@ impl fmt::Display for AppError {
             Self::Resolution(error) => error.fmt(formatter),
             Self::Compose(error) => error.fmt(formatter),
             Self::Process(error) => error.fmt(formatter),
+            Self::InteractiveShellUnavailable { service, tried } => write!(
+                formatter,
+                "could not open an interactive shell for service '{}'; tried {tried}. Ensure the service is running and contains a supported shell.",
+                service.to_string_lossy()
+            ),
             Self::MigrationIncomplete { skipped, conflicts } => write!(
                 formatter,
                 "legacy registry migration completed with {skipped} skipped entr{} and {conflicts} conflict{}",
@@ -73,7 +80,10 @@ impl std::error::Error for AppError {
             Self::Compose(error) => Some(error),
             Self::Process(error) => Some(error),
             Self::Output(error) => Some(error),
-            Self::NoCommand | Self::InvalidOptions(_) | Self::MigrationIncomplete { .. } => None,
+            Self::NoCommand
+            | Self::InvalidOptions(_)
+            | Self::InteractiveShellUnavailable { .. }
+            | Self::MigrationIncomplete { .. } => None,
         }
     }
 }

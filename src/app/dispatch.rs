@@ -107,7 +107,11 @@ pub(crate) fn run(
         | Command::Recreate(_)
         | Command::Pull(_)
         | Command::Update(_)
-        | Command::Rebuild(_) => unreachable!("operational command was routed above"),
+        | Command::Rebuild(_)
+        | Command::Services(_)
+        | Command::Logs(_)
+        | Command::Exec(_)
+        | Command::Run(_) => unreachable!("operational command was routed above"),
     }
 }
 
@@ -151,6 +155,10 @@ fn validate_global_options(
             | Command::Pull(_)
             | Command::Update(_)
             | Command::Rebuild(_)
+            | Command::Services(_)
+            | Command::Logs(_)
+            | Command::Exec(_)
+            | Command::Run(_)
     );
     let supports_files = matches!(
         command,
@@ -165,6 +173,10 @@ fn validate_global_options(
             | Command::Pull(_)
             | Command::Update(_)
             | Command::Rebuild(_)
+            | Command::Services(_)
+            | Command::Logs(_)
+            | Command::Exec(_)
+            | Command::Run(_)
             | Command::Registry(crate::cli::RegistryArgs {
                 command: RegistryCommand::Add { .. }
             })

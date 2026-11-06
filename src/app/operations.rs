@@ -2,10 +2,13 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     cli::{
-        Command, ComposeArgs, DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions,
-        UpArgs,
+        Command, ComposeArgs, DownArgs, ExecArgs, LogsArgs, RebuildArgs, RecreateArgs, RunArgs,
+        ServicesArgs, ServicesCommandArgs, TargetOptions, UpArgs,
     },
-    compose::commands::{down, pull, raw, rebuild, recreate, restart, start, stop, up, update},
+    compose::commands::{
+        down, exec, logs, pull, raw, rebuild, recreate, restart, run as compose_run, services,
+        start, stop, up, update,
+    },
     config::AppPaths,
     context::{ResolvedContext, resolve_context},
     error::AppError,
@@ -26,6 +29,10 @@ pub(crate) enum Request {
     Pull(ServicesArgs),
     Update(ServicesArgs),
     Rebuild(RebuildArgs),
+    Services(ServicesCommandArgs),
+    Logs(LogsArgs),
+    Exec(ExecArgs),
+    Run(RunArgs),
 }
 
 impl Request {
@@ -41,6 +48,10 @@ impl Request {
             Command::Pull(arguments) => Ok(Self::Pull(arguments)),
             Command::Update(arguments) => Ok(Self::Update(arguments)),
             Command::Rebuild(arguments) => Ok(Self::Rebuild(arguments)),
+            Command::Services(arguments) => Ok(Self::Services(arguments)),
+            Command::Logs(arguments) => Ok(Self::Logs(arguments)),
+            Command::Exec(arguments) => Ok(Self::Exec(arguments)),
+            Command::Run(arguments) => Ok(Self::Run(arguments)),
             command => Err(command),
         }
     }
@@ -111,6 +122,38 @@ pub(crate) fn run(
                 &context,
                 arguments.services,
                 arguments.no_cache,
+                environment.executor,
+            )
+        }
+        Request::Services(arguments) => {
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            services::run(&context, environment.executor)
+        }
+        Request::Logs(arguments) => {
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            logs::run(
+                &context,
+                arguments.services,
+                arguments.follow,
+                arguments.tail,
+                environment.executor,
+            )
+        }
+        Request::Exec(arguments) => {
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            exec::run(
+                &context,
+                arguments.service,
+                arguments.command,
+                environment.executor,
+            )
+        }
+        Request::Run(arguments) => {
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            compose_run::run(
+                &context,
+                arguments.service,
+                arguments.command,
                 environment.executor,
             )
         }

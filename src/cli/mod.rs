@@ -1,9 +1,11 @@
 mod compose;
 mod config;
 mod context;
+mod inspect;
 mod lifecycle;
 mod migration;
 mod registry;
+mod service_command;
 
 use std::{ffi::OsString, path::PathBuf};
 
@@ -12,9 +14,11 @@ use clap::{Parser, Subcommand};
 pub use compose::ComposeArgs;
 pub use config::{ConfigArgs, ConfigCommand};
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
+pub use inspect::{LogsArgs, ServicesCommandArgs};
 pub use lifecycle::{DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs};
 pub use migration::{MigrationArgs, MigrationCommand};
 pub use registry::{RegistryArgs, RegistryCommand};
+pub use service_command::{ExecArgs, RunArgs};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -60,6 +64,14 @@ pub enum Command {
     Update(ServicesArgs),
     /// Build images and start rebuilt services.
     Rebuild(RebuildArgs),
+    /// List services defined by the resolved Compose model.
+    Services(ServicesCommandArgs),
+    /// Show service logs without following by default.
+    Logs(LogsArgs),
+    /// Execute a command or open a supported interactive shell when no command is given.
+    Exec(ExecArgs),
+    /// Run a removable one-off container, using its default command when none is given.
+    Run(RunArgs),
     /// Inspect DStack's user configuration.
     Config(ConfigArgs),
     /// Inspect the resolved stack and Compose-file context.

@@ -30,6 +30,10 @@ dstack [-s NAME] [--file FILE]... down [--volumes]
 dstack [-s NAME] [--file FILE]... recreate [--volumes]
 dstack [-s NAME] [--file FILE]... update [SERVICE...]
 dstack [-s NAME] [--file FILE]... rebuild [--no-cache] [SERVICE...]
+dstack [-s NAME] [--file FILE]... services
+dstack [-s NAME] [--file FILE]... logs [-f|--follow] [--tail N] [SERVICE...]
+dstack [-s NAME] [--file FILE]... exec SERVICE [-- COMMAND...]
+dstack [-s NAME] [--file FILE]... run SERVICE [-- COMMAND...]
 ```
 
 The first non-help operation creates `~/.config/dstack/dstack.conf` and a
@@ -46,6 +50,21 @@ DStack, such as `dstack compose -- --file special.yaml up`. The typed
 `dstack up` command runs `up -d --build`; `update`, `rebuild`, and `recreate`
 are fail-fast multi-step operations. Docker stdin, stdout, and stderr remain
 inherited, and DStack returns Docker's numeric exit status when available.
+
+`dstack services` lists the services defined by the resolved Compose model by
+running `docker compose ... config --services`; it does not depend on running
+containers. `dstack logs` is non-following by default and shows the last 100
+lines. Use `--follow`/`-f` for streaming and `--tail N` for a non-negative
+line count. Service operands retain their order, and DStack does not insert a
+pager or rewrite Compose log output.
+
+`dstack exec SERVICE` quietly probes `bash`, `sh`, `zsh`, then `ash` and opens
+the first available interactive shell. An explicit command requires the hard
+boundary form `dstack exec SERVICE -- COMMAND...`. Likewise,
+`dstack run SERVICE` uses the configured service/image command, while
+`dstack run SERVICE -- COMMAND...` supplies exact command argv. Typed `run`
+always uses `--rm`. These operations inherit terminal streams; DStack never
+joins, quotes, or evaluates command arguments through a host shell.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

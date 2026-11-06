@@ -16,6 +16,12 @@ impl ProcessExecutor for NativeProcessExecutor {
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit());
             }
+            StdioPolicy::Null => {
+                command
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+            }
         }
 
         let mut child = command.spawn().map_err(|source| ProcessError::Spawn {

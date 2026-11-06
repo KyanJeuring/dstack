@@ -3,6 +3,7 @@
 pub mod commands;
 mod invocation;
 mod resolution;
+pub(crate) mod shell;
 
 pub use invocation::ComposeInvocation;
 pub use resolution::{

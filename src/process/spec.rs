@@ -3,6 +3,7 @@ use std::{ffi::OsString, path::PathBuf};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdioPolicy {
     Inherit,
+    Null,
 }
 
 /// A process request expressed without shell parsing or quoting.
@@ -26,6 +27,11 @@ impl ProcessSpec {
 
     pub fn with_args(mut self, args: impl IntoIterator<Item = impl Into<OsString>>) -> Self {
         self.args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    pub fn with_stdio(mut self, stdio: StdioPolicy) -> Self {
+        self.stdio = stdio;
         self
     }
 }
@@ -72,6 +78,21 @@ mod tests {
         );
         assert_eq!(spec.current_dir, PathBuf::from("project with space/项目"));
         assert_eq!(spec.stdio, StdioPolicy::Inherit);
+    }
+
+    #[test]
+    fn process_spec_can_request_null_stdio_without_changing_argv() {
+        let spec = ProcessSpec::new("docker", PathBuf::from("project"))
+            .with_args(["compose", "exec", "-T", "app", "sh", "-c", "exit 0"])
+            .with_stdio(StdioPolicy::Null);
+
+        assert_eq!(spec.program, OsString::from("docker"));
+        assert_eq!(
+            spec.args,
+            ["compose", "exec", "-T", "app", "sh", "-c", "exit 0"].map(OsString::from)
+        );
+        assert_eq!(spec.current_dir, PathBuf::from("project"));
+        assert_eq!(spec.stdio, StdioPolicy::Null);
     }
 
     #[test]

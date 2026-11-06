@@ -254,6 +254,119 @@ fn service_operands_are_never_guessed_as_stack_or_command_names() {
 }
 
 #[test]
+fn services_and_logs_accept_target_options_around_the_command() {
+    for argv in [
+        vec![
+            "dstack",
+            "-s",
+            "jellyfin",
+            "--file",
+            "compose.prod.yaml",
+            "services",
+        ],
+        vec![
+            "dstack",
+            "services",
+            "--file",
+            "compose.prod.yaml",
+            "-s",
+            "jellyfin",
+        ],
+    ] {
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let root_stack = cli.stack;
+        let root_files = cli.files;
+        let Some(Command::Services(arguments)) = cli.command else {
+            panic!("services command should parse");
+        };
+        assert_eq!(
+            root_stack.as_deref().or(arguments.target.stack.as_deref()),
+            Some("jellyfin")
+        );
+        assert_eq!(
+            [root_files, arguments.target.files].concat(),
+            [PathBuf::from("compose.prod.yaml")]
+        );
+    }
+
+    let cli = Cli::try_parse_from([
+        "dstack", "logs", "php", "worker", "php", "--tail", "25", "-f", "-s", "prod",
+    ])
+    .unwrap();
+    let Some(Command::Logs(arguments)) = cli.command else {
+        panic!("logs command should parse");
+    };
+    assert!(arguments.follow);
+    assert_eq!(arguments.tail, 25);
+    assert_eq!(arguments.target.stack.as_deref(), Some("prod"));
+    assert_eq!(
+        arguments.services,
+        ["php", "worker", "php"].map(std::ffi::OsString::from)
+    );
+
+    for flag in ["-f", "--follow"] {
+        let Some(Command::Logs(arguments)) = Cli::try_parse_from(["dstack", "logs", flag, "php"])
+            .unwrap()
+            .command
+        else {
+            panic!("logs command should parse");
+        };
+        assert!(arguments.follow);
+        assert_eq!(arguments.tail, 100);
+        assert_eq!(arguments.services, [std::ffi::OsString::from("php")]);
+    }
+}
+
+#[test]
+fn logs_tail_is_typed_and_rejects_negative_or_nonnumeric_values() {
+    let negative = Cli::try_parse_from(["dstack", "logs", "--tail", "-1"]).unwrap_err();
+    assert!(negative.to_string().contains("unexpected argument '-1'"));
+    let nonnumeric = Cli::try_parse_from(["dstack", "logs", "--tail", "nope"]).unwrap_err();
+    assert!(nonnumeric.to_string().contains("invalid value 'nope'"));
+
+    let Some(Command::Logs(arguments)) = Cli::try_parse_from(["dstack", "logs", "--tail", "0"])
+        .unwrap()
+        .command
+    else {
+        panic!("logs command should parse");
+    };
+    assert_eq!(arguments.tail, 0);
+}
+
+#[test]
+fn exec_and_run_require_a_hard_boundary_for_explicit_commands() {
+    for (command, service) in [("exec", "php"), ("run", "worker")] {
+        let error = Cli::try_parse_from(["dstack", command, service, "bash"]).unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("unexpected argument 'bash'"));
+        assert!(rendered.contains(&format!("dstack {command} [OPTIONS] SERVICE -- COMMAND...")));
+    }
+}
+
+#[test]
+fn exec_and_run_preserve_every_argument_after_the_hard_boundary() {
+    let exec = Cli::try_parse_from([
+        "dstack", "exec", "app", "--", "command", "--file", "foo", "-s", "bar",
+    ])
+    .unwrap();
+    let Some(Command::Exec(arguments)) = exec.command else {
+        panic!("exec command should parse");
+    };
+    assert_eq!(arguments.service, std::ffi::OsString::from("app"));
+    assert_eq!(
+        arguments.command,
+        ["command", "--file", "foo", "-s", "bar"].map(std::ffi::OsString::from)
+    );
+
+    let run = Cli::try_parse_from(["dstack", "run", "worker", "--", "--help"]).unwrap();
+    let Some(Command::Run(arguments)) = run.command else {
+        panic!("run command should parse");
+    };
+    assert_eq!(arguments.service, std::ffi::OsString::from("worker"));
+    assert_eq!(arguments.command, [std::ffi::OsString::from("--help")]);
+}
+
+#[test]
 fn generated_help_is_valid() {
     Cli::command().debug_assert();
 }
