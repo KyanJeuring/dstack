@@ -1,15 +1,23 @@
+mod config;
+mod context;
+mod migration;
+mod registry;
+
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
-/// DStack v2 command-line interface.
-///
+pub use config::{ConfigArgs, ConfigCommand};
+pub use context::{ContextArgs, ContextCommand, ContextOptions};
+pub use migration::{MigrationArgs, MigrationCommand};
+pub use registry::{RegistryArgs, RegistryCommand};
+
 #[derive(Debug, Parser)]
 #[command(
-    name = "dstack",
-    version,
-    about = "Docker Compose stack management from anywhere",
-    long_about = None
+  name = "dstack",
+  version,
+  about = "Docker Compose stack management from anywhere",
+  long_about = None
 )]
 pub struct Cli {
     /// Target a registered or discovered stack by exact name.
@@ -17,11 +25,7 @@ pub struct Cli {
     pub stack: Option<String>,
 
     /// Select a Compose file explicitly; repeat to preserve a multi-file order.
-    #[arg(
-        long = "file",
-        value_name = "FILE",
-        action = clap::ArgAction::Append
-    )]
+    #[arg(long = "file", value_name = "FILE", action = clap::ArgAction::Append)]
     pub files: Vec<PathBuf>,
 
     #[command(subcommand)]
@@ -42,91 +46,6 @@ pub enum Command {
     Migrate(MigrationArgs),
 }
 
-#[derive(Debug, Args)]
-pub struct ConfigArgs {
-    #[command(subcommand)]
-    pub command: ConfigCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ConfigCommand {
-    /// Print the effective dstack.conf path.
-    Path,
-    /// Show the parsed effective configuration.
-    Show,
-}
-
-#[derive(Debug, Args)]
-pub struct ContextArgs {
-    #[command(subcommand)]
-    pub command: ContextCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ContextCommand {
-    /// Show the effective stack, source, project, and Compose files.
-    Show(ContextOptions),
-}
-
-#[derive(Debug, Args, Default)]
-pub struct ContextOptions {
-    /// Target a registered or discovered stack by exact name.
-    #[arg(short = 's', long = "stack", value_name = "NAME")]
-    pub stack: Option<String>,
-
-    /// Select a Compose file explicitly; repeat to preserve order.
-    #[arg(long = "file", value_name = "FILE", action = clap::ArgAction::Append)]
-    pub files: Vec<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct RegistryArgs {
-    #[command(subcommand)]
-    pub command: RegistryCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum RegistryCommand {
-    /// List explicitly registered stack profiles.
-    List,
-    /// Show one registered stack profile.
-    Show {
-        /// Registered profile name.
-        name: String,
-    },
-    /// Add a named stack profile.
-    Add {
-        /// Profile name.
-        name: String,
-        /// Existing project directory.
-        path: PathBuf,
-        /// Default Compose file, relative to the project or absolute.
-        #[arg(long = "file", value_name = "FILE", action = clap::ArgAction::Append)]
-        files: Vec<PathBuf>,
-    },
-    /// Remove a persistent profile without touching project files.
-    Remove {
-        /// Registered profile name.
-        name: String,
-    },
-}
-
-#[derive(Debug, Args)]
-pub struct MigrationArgs {
-    #[command(subcommand)]
-    pub command: MigrationCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum MigrationCommand {
-    /// Import the legacy v1 registry without modifying its source file.
-    Registry {
-        /// Preview accepted, skipped, and conflicting entries without writing.
-        #[arg(long)]
-        dry_run: bool,
-    },
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -137,8 +56,7 @@ mod tests {
 
     #[test]
     fn parses_bare_invocation_for_application_diagnostic() {
-        let cli = Cli::try_parse_from(["dstack"])
-            .expect("an invocation without options should reach the application");
+        let cli = Cli::try_parse_from(["dstack"]).unwrap();
         assert!(cli.command.is_none());
     }
 
@@ -154,8 +72,7 @@ mod tests {
             "compose.yaml",
             "--file=compose.prod.yaml",
         ])
-        .expect("registry add should parse");
-
+        .unwrap();
         let Some(Command::Registry(registry)) = cli.command else {
             panic!("registry command should be selected");
         };
@@ -175,8 +92,7 @@ mod tests {
 
     #[test]
     fn parses_migration_dry_run() {
-        let cli = Cli::try_parse_from(["dstack", "migrate", "registry", "--dry-run"])
-            .expect("migration dry run should parse");
+        let cli = Cli::try_parse_from(["dstack", "migrate", "registry", "--dry-run"]).unwrap();
         let Some(Command::Migrate(migration)) = cli.command else {
             panic!("migration command should be selected");
         };
@@ -217,8 +133,7 @@ mod tests {
                 "jellyfin",
             ],
         ] {
-            let cli =
-                Cli::try_parse_from(argv).expect("global options should be position-flexible");
+            let cli = Cli::try_parse_from(argv).unwrap();
             let root_stack = cli.stack;
             let root_files = cli.files;
             let Some(Command::Context(context)) = cli.command else {

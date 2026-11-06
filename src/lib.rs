@@ -2,12 +2,14 @@ pub mod app;
 pub mod cli;
 pub mod compose;
 pub mod config;
+pub mod context;
 pub mod discovery;
 pub mod error;
 pub mod migration;
 pub mod output;
 pub mod registry;
 pub mod resolution;
+pub mod stack;
 
 pub use cli::Cli;
 pub use error::AppError;
