@@ -1110,6 +1110,9 @@ fn direct_session_guidance_uses_profile_ownership_and_reload_state() {
                 .env_remove("DSTACK_SESSION")
                 .env_remove("DSTACK_SHELL_ADAPTER")
                 .env_remove("MSYSTEM")
+                .env_remove("POWERSHELL_DISTRIBUTION_CHANNEL")
+                .env_remove("FISH_VERSION")
+                .env_remove("ZSH_VERSION")
                 .output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(1));
