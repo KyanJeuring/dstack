@@ -282,6 +282,7 @@ fn held_lock_prevents_mutation_and_preserves_registry() {
     let error = store.add(profile(&temp, "blocked", &[])).unwrap_err();
     assert!(matches!(error, RegistryError::LockBusy(_)));
     assert_eq!(fs::read(store.path()).unwrap(), before);
+    lock.unlock().unwrap();
     drop(lock);
     store.add(profile(&temp, "after", &[])).unwrap();
 }

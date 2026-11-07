@@ -1058,6 +1058,7 @@ fn managed_and_manual_uninstall_removes_only_the_managed_block() {
     assert!(!root.exists());
 }
 
+#[cfg(unix)]
 #[test]
 fn direct_session_guidance_uses_profile_ownership_and_reload_state() {
     let temp = TempDir::new().unwrap();
