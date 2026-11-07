@@ -1,6 +1,9 @@
 use std::process::{Command, Stdio};
 
-use super::{ProcessError, ProcessExecutor, ProcessSpec, ProcessStatus, StdioPolicy};
+use super::{
+    CapturePolicy, CapturedProcess, CapturedProcessSpec, ProcessError, ProcessExecutor,
+    ProcessOutputExecutor, ProcessSpec, ProcessStatus, StdioPolicy,
+};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NativeProcessExecutor;
@@ -38,12 +41,51 @@ impl ProcessExecutor for NativeProcessExecutor {
     }
 }
 
+impl ProcessOutputExecutor for NativeProcessExecutor {
+    fn capture(&self, spec: &CapturedProcessSpec) -> Result<CapturedProcess, ProcessError> {
+        let process = &spec.process;
+        let mut command = Command::new(&process.program);
+        command
+            .args(&process.args)
+            .current_dir(&process.current_dir);
+        match spec.policy {
+            CapturePolicy::StdoutWithInheritedStderr => {
+                command
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::inherit());
+            }
+        }
+
+        let child = command.spawn().map_err(|source| ProcessError::Spawn {
+            program: process.program.clone(),
+            source,
+        })?;
+        let output = child
+            .wait_with_output()
+            .map_err(|source| ProcessError::Wait {
+                program: process.program.clone(),
+                source,
+            })?;
+        let status = output
+            .status
+            .code()
+            .map_or_else(ProcessStatus::without_code, ProcessStatus::from_code);
+        Ok(CapturedProcess {
+            status,
+            stdout: output.stdout,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{error::Error, path::PathBuf};
 
     use super::NativeProcessExecutor;
-    use crate::process::{ProcessError, ProcessExecutor, ProcessSpec};
+    use crate::process::{
+        CapturedProcessSpec, ProcessError, ProcessExecutor, ProcessOutputExecutor, ProcessSpec,
+    };
 
     #[test]
     fn missing_executable_maps_to_spawn_error_with_os_context() {
@@ -56,5 +98,18 @@ mod tests {
         assert!(matches!(error, ProcessError::Spawn { .. }));
         assert!(error.source().is_some());
         assert!(error.to_string().contains("does-not-exist"));
+    }
+
+    #[test]
+    fn missing_captured_executable_maps_to_spawn_error_with_os_context() {
+        let spec = CapturedProcessSpec::stdout(ProcessSpec::new(
+            "dstack-phase6-capture-that-does-not-exist",
+            PathBuf::from("."),
+        ));
+        let error = NativeProcessExecutor.capture(&spec).unwrap_err();
+
+        assert!(matches!(error, ProcessError::Spawn { .. }));
+        assert!(error.source().is_some());
+        assert!(error.to_string().contains("phase6-capture"));
     }
 }

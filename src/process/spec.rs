@@ -6,6 +6,13 @@ pub enum StdioPolicy {
     Null,
 }
 
+/// Stdio contract for bounded captured-output requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapturePolicy {
+    /// Null stdin, captured stdout, and inherited stderr.
+    StdoutWithInheritedStderr,
+}
+
 /// A process request expressed without shell parsing or quoting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessSpec {
@@ -36,6 +43,29 @@ impl ProcessSpec {
     }
 }
 
+/// A process request whose bounded stdout is consumed by DStack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapturedProcessSpec {
+    pub process: ProcessSpec,
+    pub policy: CapturePolicy,
+}
+
+impl CapturedProcessSpec {
+    pub fn stdout(process: ProcessSpec) -> Self {
+        Self {
+            process,
+            policy: CapturePolicy::StdoutWithInheritedStderr,
+        }
+    }
+}
+
+/// Captured stdout paired with the native child status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapturedProcess {
+    pub status: ProcessStatus,
+    pub stdout: Vec<u8>,
+}
+
 /// Portable projection of a native child status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcessStatus {
@@ -64,7 +94,7 @@ impl ProcessStatus {
 mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
-    use super::{ProcessSpec, ProcessStatus, StdioPolicy};
+    use super::{CapturePolicy, CapturedProcessSpec, ProcessSpec, ProcessStatus, StdioPolicy};
 
     #[test]
     fn process_spec_preserves_native_program_args_cwd_and_stdio() {
@@ -101,5 +131,19 @@ mod tests {
         assert!(!ProcessStatus::from_code(17).success());
         assert_eq!(ProcessStatus::from_code(17).code(), Some(17));
         assert_eq!(ProcessStatus::without_code().code(), None);
+    }
+
+    #[test]
+    fn captured_spec_explicitly_records_stdout_capture_and_inherited_stderr() {
+        let process = ProcessSpec::new("docker", PathBuf::from("host cwd")).with_args([
+            "container",
+            "ls",
+            "--format",
+            "{{.ID}}",
+        ]);
+        let captured = CapturedProcessSpec::stdout(process.clone());
+
+        assert_eq!(captured.process, process);
+        assert_eq!(captured.policy, CapturePolicy::StdoutWithInheritedStderr);
     }
 }
