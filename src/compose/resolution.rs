@@ -6,6 +6,7 @@ use crate::{config::DstackConfig, resolution::ResolvedStack};
 pub enum ComposeSelectionSource {
     Explicit,
     RegisteredProfile,
+    Session,
     Automatic,
 }
 
@@ -25,7 +26,11 @@ pub fn resolve_compose_files(
         (ComposeSelectionSource::Explicit, explicit_files)
     } else if !stack.profile_files.is_empty() {
         (
-            ComposeSelectionSource::RegisteredProfile,
+            if stack.source == crate::resolution::StackSource::Session {
+                ComposeSelectionSource::Session
+            } else {
+                ComposeSelectionSource::RegisteredProfile
+            },
             stack.profile_files.as_slice(),
         )
     } else {
@@ -101,6 +106,7 @@ impl fmt::Display for ComposeError {
                 match source {
                     ComposeSelectionSource::Explicit => "explicitly selected",
                     ComposeSelectionSource::RegisteredProfile => "registered profile",
+                    ComposeSelectionSource::Session => "terminal session",
                     ComposeSelectionSource::Automatic => "automatically selected",
                 },
                 path.display()

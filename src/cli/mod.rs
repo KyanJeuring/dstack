@@ -10,6 +10,8 @@ mod migration;
 mod network;
 mod registry;
 mod service_command;
+mod session;
+mod shell;
 mod volume;
 
 use std::{ffi::OsString, path::PathBuf};
@@ -30,6 +32,8 @@ pub use migration::{MigrationArgs, MigrationCommand};
 pub use network::{NetworkArgs, NetworkCommand, NetworkInspectArgs, NetworkListArgs};
 pub use registry::{RegistryArgs, RegistryCommand};
 pub use service_command::{ExecArgs, RunArgs};
+pub use session::UseArgs;
+pub use shell::{ShellActivateArgs, ShellArgs, ShellCommand};
 pub use volume::{VolumeArgs, VolumeCommand, VolumeListArgs, VolumeNamesArgs};
 
 #[derive(Debug, Parser)]
@@ -100,6 +104,12 @@ pub enum Command {
     Registry(RegistryArgs),
     /// Explicitly migrate legacy DStack data.
     Migrate(MigrationArgs),
+    /// Select a stack for this terminal session (requires shell integration).
+    Use(UseArgs),
+    /// Clear the active stack from this terminal (requires shell integration).
+    Unset,
+    /// Generate and support shell integration.
+    Shell(ShellArgs),
 }
 
 impl Cli {

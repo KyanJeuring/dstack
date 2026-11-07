@@ -12,9 +12,9 @@
 > an existing v1 installation with the development binary.
 
 The in-development v2 foundation provides persistent registry, configuration,
-discovery, context planning, and native Docker Compose execution. The process
-boundary uses exact OS arguments and never reconstructs a shell command.
-Developer-facing commands include:
+discovery, terminal-scoped active contexts, context planning, and native Docker
+Compose execution. The process boundary uses exact OS arguments and never
+reconstructs a shell command. Developer-facing commands include:
 
 ```text
 dstack config path
@@ -22,6 +22,9 @@ dstack config show
 dstack registry list|show|add|remove
 dstack migrate registry [--dry-run]
 dstack list
+dstack use NAME [--file FILE]...
+dstack unset
+dstack shell init <bash|zsh|fish|powershell>
 dstack [-s NAME] [--file FILE]... context show
 dstack [-s NAME] [--file FILE]... compose [--] [ARGS...]
 dstack [-s NAME] [--file FILE]... up [--remove-orphans] [SERVICE...]
@@ -88,6 +91,67 @@ and render aligned DStack tables. Docker stderr remains inherited. Live stats,
 inspect JSON, one-container port lookup, and explicit volume removal remain
 Docker-owned streaming output. No v2 host command invokes a shell pipeline,
 pager, or external table utility.
+
+### V2 terminal sessions and shell integration
+
+V2 keeps persistent profiles and terminal state separate. `dstack registry
+add NAME PATH` stores a reusable profile; `dstack use NAME` selects a resolved
+snapshot for only the current terminal, and `dstack unset` clears only that
+terminal selection. Neither session command adds or removes a registry entry.
+`dstack context show` displays the effective stack, source, project, and
+ordered Compose files; an active terminal selection reports `Source: session`.
+
+A child process cannot change its parent shell. Initialize the thin v2 adapter
+for the shell that is actually running:
+
+```bash
+# Bash
+eval "$(dstack shell init bash)"
+
+# Zsh
+eval "$(dstack shell init zsh)"
+```
+
+```fish
+# Fish
+dstack shell init fish | source
+```
+
+```powershell
+# PowerShell
+Invoke-Expression ((& dstack shell init powershell) -join "`n")
+```
+
+The adapter shadows `dstack`, delegates ordinary commands to the executable,
+and intercepts only `use` and `unset`. Running the executable directly for
+those two commands fails with setup guidance instead of pretending it changed
+the parent environment. Phase 7 does not edit shell startup files; add the
+appropriate initialization form manually while developing v2.
+
+The active snapshot is exported as one compact, versioned JSON value in
+`DSTACK_SESSION`. It contains the stack name, canonical project path, ordered
+absolute Compose-file paths, and the original registered/discovered activation
+source. It is never written to `dstack.conf`, `registry.toml`, or another
+DStack state file. Independent terminals therefore remain independent; child
+shells naturally inherit exported state.
+
+Stack-scoped commands resolve targets in this order:
+
+1. explicit `--stack NAME` / `-s NAME`;
+2. valid `DSTACK_SESSION` snapshot;
+3. a Compose project in the exact current directory;
+4. a nonzero error.
+
+For an active session, explicit command `--file` values replace the session's
+stored files; otherwise the snapshot's ordered files are used. For an explicit
+stack, explicit files replace registered profile defaults, which in turn
+precede automatic configured-candidate selection. Cwd resolution has no
+profile defaults. A malformed or stale higher-precedence session fails clearly
+and never falls back to cwd. Use `dstack unset` or select the stack again.
+
+The legacy v1 `DSTACK` and `DSTACK_COMPOSE_FILE` variables are not v2 session
+state and are ignored by the Rust runtime. Host-scoped `container`, `image`,
+`volume`, and `network` commands also ignore `DSTACK_SESSION` completely.
 
 Phase 6 migrates the useful v1 host helpers to descriptive v2 commands:
 

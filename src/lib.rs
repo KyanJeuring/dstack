@@ -15,6 +15,8 @@ pub mod output;
 pub mod process;
 pub mod registry;
 pub mod resolution;
+pub mod session;
+pub mod shell;
 pub mod stack;
 pub mod volume;
 

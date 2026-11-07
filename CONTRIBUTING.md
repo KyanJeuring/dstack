@@ -100,6 +100,19 @@ streaming executor and inherited stdio. Do not add shell pipelines, legacy
 abbreviated aliases, a generic `dstack docker` passthrough, or host-wide prune
 and stop-all operations as part of this phase.
 
+Phase 7 adds terminal-only active context through the versioned
+`DSTACK_SESSION` environment payload and thin Bash, Zsh, Fish, and PowerShell
+adapters. Registry persistence, terminal session state, and shell rendering
+must remain separate. Stack resolution is explicit `--stack`, then session,
+then exact cwd. Session parsing must stay lazy so malformed state cannot affect
+explicit targets, effective listing, or host-scoped namespaces. Shell mutation
+stdout is machine-consumable code; diagnostics belong on stderr. Never write a
+session file, inspect legacy `DSTACK`/`DSTACK_COMPOSE_FILE` as v2 state, or put
+registry/discovery/Compose logic into an adapter.
+
+Phase 7 does not add host lifecycle/prune expansion, self-update, installer
+changes, shell startup-file editing, or completion frameworks.
+
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
 developer's real v1 or v2 state. The override contains `dstack.conf` and

@@ -13,6 +13,7 @@ include = [
   "tests/phase1_cli.rs",
   "tests/phase2_registry_cli.rs",
   "tests/phase3_resolution_cli.rs",
+  "tests/phase7_session_cli.rs",
   "Cargo.toml",
   "Cargo.lock",
   "README.md",
@@ -30,6 +31,7 @@ atomic-write-file = "0.3.1"
 clap = { version = "4.6", features = ["derive"] }
 dirs = "7.0"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 toml = "1.2"
 unicode-width = { version = "0.2", default-features = false }
 

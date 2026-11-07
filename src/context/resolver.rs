@@ -6,7 +6,8 @@ use crate::{
     discovery::discover_stacks,
     error::AppError,
     registry::Registry,
-    resolution::{ResolvedStack, resolve_stack},
+    resolution::{ResolvedStack, resolve_current_directory_stack, resolve_named_stack},
+    session::{SessionEnvironment, resolve_active_session},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,9 +23,16 @@ pub fn resolve_context(
     explicit_stack: Option<&str>,
     explicit_files: &[PathBuf],
     current_dir: &Path,
+    session: &SessionEnvironment,
 ) -> Result<ResolvedContext, AppError> {
-    let discovered = discover_stacks(config, home_dir)?;
-    let stack = resolve_stack(explicit_stack, current_dir, registry, &discovered, config)?;
+    let stack = if let Some(name) = explicit_stack {
+        let discovered = discover_stacks(config, home_dir)?;
+        resolve_named_stack(name, registry, &discovered)?
+    } else if let Some(stack) = resolve_active_session(session)? {
+        stack
+    } else {
+        resolve_current_directory_stack(current_dir, config)?
+    };
     let compose = resolve_compose_files(&stack, explicit_files, config)?;
     Ok(ResolvedContext { stack, compose })
 }

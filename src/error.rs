@@ -3,7 +3,7 @@ use std::{ffi::OsString, fmt, io, process::ExitCode};
 use crate::{
     compose::ComposeError, config::ConfigError, discovery::DiscoveryError,
     docker::DockerOutputError, migration::MigrationError, process::ProcessError,
-    registry::RegistryError, resolution::ResolutionError,
+    registry::RegistryError, resolution::ResolutionError, session::SessionError,
 };
 
 #[derive(Debug)]
@@ -15,11 +15,13 @@ pub enum AppError {
     Migration(MigrationError),
     Discovery(DiscoveryError),
     Resolution(ResolutionError),
+    Session(SessionError),
     Compose(ComposeError),
     Process(ProcessError),
     DockerOutput(DockerOutputError),
     InteractiveShellUnavailable { service: OsString, tried: String },
     MigrationIncomplete { skipped: usize, conflicts: usize },
+    ShellIntegrationRequired(&'static str),
     Output(io::Error),
 }
 
@@ -32,11 +34,13 @@ impl AppError {
             | Self::Migration(_)
             | Self::Discovery(_)
             | Self::Resolution(_)
+            | Self::Session(_)
             | Self::Compose(_)
             | Self::Process(_)
             | Self::DockerOutput(_)
             | Self::InteractiveShellUnavailable { .. }
             | Self::MigrationIncomplete { .. }
+            | Self::ShellIntegrationRequired(_)
             | Self::Output(_) => ExitCode::FAILURE,
         }
     }
@@ -53,6 +57,7 @@ impl fmt::Display for AppError {
             Self::Migration(error) => error.fmt(formatter),
             Self::Discovery(error) => error.fmt(formatter),
             Self::Resolution(error) => error.fmt(formatter),
+            Self::Session(error) => error.fmt(formatter),
             Self::Compose(error) => error.fmt(formatter),
             Self::Process(error) => error.fmt(formatter),
             Self::DockerOutput(error) => error.fmt(formatter),
@@ -67,6 +72,10 @@ impl fmt::Display for AppError {
                 if *skipped == 1 { "y" } else { "ies" },
                 if *conflicts == 1 { "" } else { "s" }
             ),
+            Self::ShellIntegrationRequired(command) => write!(
+                formatter,
+                "'{command}' requires shell integration because DStack cannot modify its parent shell directly\ninitialize it with: dstack shell init <bash|zsh|fish|powershell>"
+            ),
             Self::Output(error) => write!(formatter, "could not write command output: {error}"),
         }
     }
@@ -80,6 +89,7 @@ impl std::error::Error for AppError {
             Self::Migration(error) => Some(error),
             Self::Discovery(error) => Some(error),
             Self::Resolution(error) => Some(error),
+            Self::Session(error) => Some(error),
             Self::Compose(error) => Some(error),
             Self::Process(error) => Some(error),
             Self::DockerOutput(error) => Some(error),
@@ -88,6 +98,7 @@ impl std::error::Error for AppError {
             | Self::InvalidOptions(_)
             | Self::InteractiveShellUnavailable { .. }
             | Self::MigrationIncomplete { .. } => None,
+            Self::ShellIntegrationRequired(_) => None,
         }
     }
 }
@@ -119,6 +130,12 @@ impl From<DiscoveryError> for AppError {
 impl From<ResolutionError> for AppError {
     fn from(error: ResolutionError) -> Self {
         Self::Resolution(error)
+    }
+}
+
+impl From<SessionError> for AppError {
+    fn from(error: SessionError) -> Self {
+        Self::Session(error)
     }
 }
 

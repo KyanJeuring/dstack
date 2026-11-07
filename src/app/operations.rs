@@ -14,6 +14,7 @@ use crate::{
     error::AppError,
     outcome::AppOutcome,
     process::ProcessExecutor,
+    session::SessionEnvironment,
 };
 
 use super::{bootstrap::RuntimeState, target::merge_stack_options};
@@ -62,6 +63,7 @@ pub(crate) struct Environment<'a> {
     pub(crate) current_dir: &'a Path,
     pub(crate) runtime: &'a RuntimeState,
     pub(crate) executor: &'a dyn ProcessExecutor,
+    pub(crate) session: &'a SessionEnvironment,
 }
 
 pub(crate) fn run(
@@ -192,5 +194,6 @@ fn resolve(
         stack.as_deref(),
         &files,
         environment.current_dir,
+        environment.session,
     )
 }

@@ -234,3 +234,41 @@ jobs:
           if ($output.Contains($escapePrefix)) {
             throw "Native redirected output contains an ANSI escape sequence"
           }
+
+      - name: Smoke PowerShell session adapter (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binaryDirectory = Join-Path $PWD "target\release"
+          $env:PATH = "$binaryDirectory;$env:PATH"
+          $env:DSTACK_CONFIG_DIR = Join-Path $env:RUNNER_TEMP "dstack-session-smoke"
+          $project = Join-Path $env:RUNNER_TEMP 'dstack project''s $value; &()'
+          New-Item -ItemType Directory -Force -Path $project | Out-Null
+          Set-Content -LiteralPath (Join-Path $project "compose.yaml") -Value "services: {}"
+          $stackName = 'stack''; Write-Host should-not-run'
+
+          & dstack registry add $stackName $project
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not prepare PowerShell adapter smoke profile"
+          }
+
+          Invoke-Expression ((& dstack shell init powershell) -join "`n")
+          Invoke-Expression ((& $global:__DStackExecutable shell init powershell) -join "`n")
+          dstack use $stackName
+          if ($LASTEXITCODE -ne 0 -or -not $env:DSTACK_SESSION) {
+            throw "PowerShell adapter did not activate DSTACK_SESSION"
+          }
+          $session = $env:DSTACK_SESSION | ConvertFrom-Json
+          if ($session.version -ne 1 -or $session.name -ne $stackName) {
+            throw "PowerShell adapter corrupted the session payload"
+          }
+          $beforeHelp = $env:DSTACK_SESSION
+          dstack use --help | Out-Null
+          if ($LASTEXITCODE -ne 0 -or $env:DSTACK_SESSION -ne $beforeHelp) {
+            throw "PowerShell adapter did not pass use help through safely"
+          }
+
+          dstack unset
+          if ($LASTEXITCODE -ne 0 -or (Test-Path Env:DSTACK_SESSION)) {
+            throw "PowerShell adapter did not clear DSTACK_SESSION"
+          }

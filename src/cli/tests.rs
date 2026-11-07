@@ -4,7 +4,7 @@ use clap::CommandFactory;
 
 use super::{
     Cli, Command, ContainerCommand, ContextCommand, ImageCommand, MigrationCommand, NetworkCommand,
-    RegistryCommand, VolumeCommand,
+    RegistryCommand, ShellCommand, VolumeCommand,
 };
 
 #[test]
@@ -575,4 +575,59 @@ fn image_volume_and_network_namespaces_parse_only_approved_operations() {
     ] {
         assert!(Cli::try_parse_from(argv).is_err());
     }
+}
+
+#[test]
+fn session_and_shell_commands_have_explicit_typed_grammar() {
+    let cli = Cli::try_parse_from([
+        "dstack",
+        "use",
+        "jellyfin 東京",
+        "--file",
+        "compose.yaml",
+        "--file=compose prod.yaml",
+    ])
+    .unwrap();
+    let Some(Command::Use(arguments)) = cli.command else {
+        panic!("use command should parse");
+    };
+    assert_eq!(arguments.name, "jellyfin 東京");
+    assert_eq!(
+        arguments.files,
+        ["compose.yaml", "compose prod.yaml"].map(PathBuf::from)
+    );
+
+    assert!(matches!(
+        Cli::try_parse_from(["dstack", "unset"]).unwrap().command,
+        Some(Command::Unset)
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(["dstack", "shell", "init", "fish"])
+            .unwrap()
+            .command,
+        Some(Command::Shell(super::ShellArgs {
+            command: ShellCommand::Init { .. }
+        }))
+    ));
+    assert!(Cli::try_parse_from(["dstack", "jellyfin"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "use", "jellyfin", "compose.yaml"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "shell", "init"]).is_err());
+    let unknown = Cli::try_parse_from(["dstack", "shell", "init", "cmd"]).unwrap_err();
+    let diagnostic = unknown.to_string();
+    assert!(diagnostic.contains("bash"));
+    assert!(diagnostic.contains("powershell"));
+}
+
+#[test]
+fn internal_shell_protocol_is_hidden_from_normal_help() {
+    let mut command = Cli::command();
+    let shell = command
+        .find_subcommand_mut("shell")
+        .expect("shell command should exist");
+    let mut help = Vec::new();
+    shell.write_long_help(&mut help).unwrap();
+    let help = String::from_utf8(help).unwrap();
+    assert!(help.contains("init"));
+    assert!(!help.contains("__activate"));
+    assert!(!help.contains("__clear"));
 }

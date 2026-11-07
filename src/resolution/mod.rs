@@ -14,6 +14,7 @@ use crate::{
 pub enum StackSource {
     Registered,
     Discovered,
+    Session,
     CurrentDirectory,
 }
 
@@ -22,6 +23,7 @@ impl fmt::Display for StackSource {
         formatter.write_str(match self {
             Self::Registered => "registered",
             Self::Discovered => "discovered",
+            Self::Session => "session",
             Self::CurrentDirectory => "cwd",
         })
     }
@@ -91,13 +93,15 @@ fn source_order(source: StackSource) -> u8 {
     match source {
         StackSource::Registered => 0,
         StackSource::Discovered => 1,
-        StackSource::CurrentDirectory => 2,
+        StackSource::Session => 2,
+        StackSource::CurrentDirectory => 3,
     }
 }
 
-/// Resolves Phase 3 context: explicit name, then exact current directory.
+/// Resolves a named stack or exact cwd without consulting terminal state.
 ///
-/// A future session layer is intentionally inserted between those branches.
+/// The production context resolver layers lazy session resolution between
+/// these branches; this lower-level helper remains useful for state-free tests.
 pub fn resolve_stack(
     explicit_name: Option<&str>,
     current_dir: &Path,
@@ -106,14 +110,13 @@ pub fn resolve_stack(
     config: &DstackConfig,
 ) -> Result<ResolvedStack, ResolutionError> {
     if let Some(name) = explicit_name {
-        return resolve_named(name, registry, discovered);
+        return resolve_named_stack(name, registry, discovered);
     }
 
-    // Future active-session resolution belongs here, before cwd fallback.
-    resolve_current_directory(current_dir, config)
+    resolve_current_directory_stack(current_dir, config)
 }
 
-fn resolve_named(
+pub fn resolve_named_stack(
     name: &str,
     registry: &Registry,
     discovered: &[DiscoveredStack],
@@ -164,7 +167,7 @@ fn registered_stack(profile: &StackProfile) -> Result<ResolvedStack, ResolutionE
     })
 }
 
-fn resolve_current_directory(
+pub fn resolve_current_directory_stack(
     current_dir: &Path,
     config: &DstackConfig,
 ) -> Result<ResolvedStack, ResolutionError> {
@@ -240,7 +243,7 @@ impl fmt::Display for ResolutionError {
                 path.display()
             ),
             Self::NoContext => formatter.write_str(
-                "no DStack context found in the exact current directory; use '--stack <name>' or '-s <name>' and run 'dstack list' to inspect available stacks",
+                "no DStack context found in the exact current directory; use '--stack <name>'/'-s <name>', select a terminal context with 'dstack use NAME', or run 'dstack list' to inspect available stacks",
             ),
             Self::Io {
                 action,
