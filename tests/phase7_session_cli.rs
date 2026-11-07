@@ -465,17 +465,22 @@ fn bash_profile_install_status_use_unset_and_uninstall_workflow() {
     let dry_run = Command::new("bash")
         .args([
             "-c",
-            r#"dstack shell install --profile "$1" --dry-run"#,
+            r#"dstack shell install --profile "$1" --dry-run; status=$?; exit "$status""#,
             "--",
             profile.to_str().unwrap(),
         ])
         .env("PATH", shell_path())
         .env("DSTACK_CONFIG_DIR", &root)
         .env_remove("DSTACK_SHELL_ADAPTER")
+        .env_remove("SHELL")
         .output()
         .unwrap();
     assert!(dry_run.status.success(), "{}", text(dry_run.stderr));
-    assert!(text(dry_run.stdout).contains("Detected shell: Bash"));
+    let dry_run_stdout = text(dry_run.stdout);
+    assert!(
+        dry_run_stdout.contains("Detected shell: Bash"),
+        "{dry_run_stdout}"
+    );
     assert!(!profile.exists());
 
     let install = run_dstack(
