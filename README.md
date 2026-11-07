@@ -133,10 +133,17 @@ dstack shell uninstall
 ```
 
 Installation adds or updates exactly one marked DStack block and preserves all
-other profile content. Uninstall removes only that block; it does not remove
-DStack, registry data, or `DSTACK_SESSION`. Neither command can reload or
-remove a function in the already-running parent shell, so open a new terminal
-or use the command DStack prints.
+other profile content. The canonical manual loaders documented below are also
+first-class installations: `dstack shell install` detects them and does not add
+a duplicate managed block. Status distinguishes managed, manual, outdated, and
+duplicate integration.
+
+Uninstall removes only a DStack-managed block. A manually added loader remains
+user-owned and must be removed manually; DStack reports it instead of claiming
+that integration was fully uninstalled. Neither install nor uninstall can
+reload or remove a function in the already-running parent shell, so open a new
+terminal or use the command DStack prints. These commands do not remove DStack,
+registry data, or `DSTACK_SESSION`.
 
 For advanced/manual integration, add the loader for the appropriate shell to
 its profile. `__init` is a hidden adapter protocol, not a general public
@@ -170,6 +177,11 @@ and reload guidance instead of pretending it changed the parent environment.
 The managed loader resolves the current DStack application each time the
 profile loads, so a later binary upgrade supplies the current adapter without
 rewriting the whole function into the profile.
+
+Older Phase 7 manual loaders using public `dstack shell init` are detected as
+outdated. DStack prints the exact current replacement but does not rewrite
+manually authored profile lines. Duplicate managed/manual loaders are reported
+for manual cleanup rather than normalized automatically.
 
 The active snapshot is exported as one compact, versioned JSON value in
 `DSTACK_SESSION`. It contains the stack name, canonical project path, ordered

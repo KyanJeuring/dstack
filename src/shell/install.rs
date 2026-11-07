@@ -7,10 +7,11 @@ use crate::{
 };
 
 use super::{
-    DetectedShell, DetectionEvidence, DetectionFailure, DetectionSource,
-    NativePowerShellProfileQuery, PowerShellProfileQuery, ProfileEnvironment, ProfileIntegration,
-    ShellError, ShellKind, adapter_kind, detect_shell, install_profile, managed_block,
-    manual_loader, profile_status, quote, resolve_profile_path, uninstall_profile,
+    DetectedShell, DetectionEvidence, DetectionFailure, DetectionSource, InstallAction,
+    ManagedIntegration, NativePowerShellProfileQuery, PowerShellProfileQuery, ProfileEnvironment,
+    ProfileIntegration, ProfileIntegrationAnalysis, ShellError, ShellKind, UninstallAction,
+    adapter_kind, detect_shell, install_profile, legacy_manual_loader, managed_block,
+    manual_loader, profile_analysis, quote, resolve_profile_path, uninstall_profile,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -54,38 +55,64 @@ fn run_install_with_query(
         &environment.profiles,
         powershell,
     )?;
-    let before = profile_status(&profile, detected.kind)?;
-    let action = install_profile(&profile, detected.kind, arguments.dry_run)?;
+    let outcome = install_profile(&profile, detected.kind, arguments.dry_run)?;
+    let integration = outcome.analysis.integration();
 
     write_shell_selection(output, &detected, arguments.shell.is_some())?;
     output.write_label_value("Profile:", &profile.display().to_string())?;
     if arguments.dry_run {
-        output.write_label_value("Profile integration:", integration_label(before))?;
-        let planned = match action {
-            super::InstallAction::Add => "add managed block",
-            super::InstallAction::Replace => "replace managed block",
-            super::InstallAction::NoOp => "no change",
+        output.write_label_value("Profile integration:", integration_label(integration))?;
+        let planned = match outcome.action {
+            InstallAction::AddManaged => "add managed block",
+            InstallAction::ReplaceManaged => "replace managed block",
+            InstallAction::AlreadyManaged => "make no change (managed integration is current)",
+            InstallAction::AlreadyManual => "make no change (already installed manually)",
+            InstallAction::BlockedLegacyManual => {
+                "make no change (outdated manual integration requires manual replacement)"
+            }
+            InstallAction::BlockedDuplicate => {
+                "make no change (duplicate integration requires manual cleanup)"
+            }
         };
         output.write_label_value("Would:", planned)?;
-        output.write_label_line("Managed block:")?;
-        writeln!(output, "{}", managed_block(detected.kind, "\n"))?;
-        return Ok(());
+        if matches!(
+            outcome.action,
+            InstallAction::AddManaged | InstallAction::ReplaceManaged
+        ) {
+            output.write_label_line("Managed block:")?;
+            writeln!(output, "{}", managed_block(detected.kind, "\n"))?;
+        }
+        return blocked_install_result(&profile, detected.kind, &outcome.analysis);
     }
 
-    match action {
-        super::InstallAction::Add => {
+    match outcome.action {
+        InstallAction::AddManaged => {
             writeln!(output, "Installed DStack shell integration:")?;
             writeln!(output, "  {}", profile.display())?;
             write_reload(output, detected.kind, &profile)?;
         }
-        super::InstallAction::Replace => {
+        InstallAction::ReplaceManaged => {
             writeln!(output, "Updated DStack shell integration:")?;
             writeln!(output, "  {}", profile.display())?;
             write_reload(output, detected.kind, &profile)?;
         }
-        super::InstallAction::NoOp => {
-            writeln!(output, "DStack shell integration is already installed:")?;
+        InstallAction::AlreadyManaged => {
+            writeln!(
+                output,
+                "DStack shell integration is already installed (managed):"
+            )?;
             writeln!(output, "  {}", profile.display())?;
+        }
+        InstallAction::AlreadyManual => {
+            writeln!(
+                output,
+                "DStack shell integration is already installed manually:"
+            )?;
+            writeln!(output, "  {}", profile.display())?;
+            writeln!(output, "No managed block was added.")?;
+        }
+        InstallAction::BlockedLegacyManual | InstallAction::BlockedDuplicate => {
+            return blocked_install_result(&profile, detected.kind, &outcome.analysis);
         }
     }
     Ok(())
@@ -117,7 +144,8 @@ fn run_status_with_query(
         &environment.profiles,
         powershell,
     )?;
-    let integration = profile_status(&profile, detected.kind)?;
+    let analysis = profile_analysis(&profile, detected.kind)?;
+    let integration = analysis.integration();
 
     output.write_label_value("Shell:", detected.kind.label())?;
     output.write_label_value("Profile:", &profile.display().to_string())?;
@@ -135,16 +163,24 @@ fn run_status_with_query(
     output.write_label_value("Current terminal adapter:", &adapter)?;
 
     match integration {
-        ProfileIntegration::Missing => {
+        ProfileIntegration::NotInstalled => {
             writeln!(output, "\nRun:\n  dstack shell install")?;
         }
-        ProfileIntegration::Outdated => {
+        ProfileIntegration::ManagedOutdated => {
             writeln!(output, "\nUpdate it with:\n  dstack shell install")?;
         }
-        ProfileIntegration::Current if adapter == "not active" => {
+        ProfileIntegration::ManualLegacy => {
+            write_manual_replacement(output, detected.kind, &analysis)?;
+        }
+        ProfileIntegration::Duplicate => {
+            return Err(integration_conflict(&profile, detected.kind, &analysis).into());
+        }
+        ProfileIntegration::ManagedCurrent | ProfileIntegration::ManualCurrent
+            if adapter == "not active" =>
+        {
             write_reload(output, detected.kind, &profile)?;
         }
-        ProfileIntegration::Current => {}
+        ProfileIntegration::ManagedCurrent | ProfileIntegration::ManualCurrent => {}
     }
     Ok(())
 }
@@ -175,40 +211,62 @@ fn run_uninstall_with_query(
         &environment.profiles,
         powershell,
     )?;
-    let action = uninstall_profile(&profile, arguments.dry_run)?;
+    let outcome = uninstall_profile(&profile, detected.kind, arguments.dry_run)?;
 
     write_shell_selection(output, &detected, arguments.shell.is_some())?;
     output.write_label_value("Profile:", &profile.display().to_string())?;
     if arguments.dry_run {
         output.write_label_value(
             "Would:",
-            match action {
-                super::UninstallAction::Remove => "remove managed block",
-                super::UninstallAction::NoOp => "make no change (managed block is absent)",
+            match outcome.action {
+                UninstallAction::RemoveManaged => "remove managed block",
+                UninstallAction::NoManagedBlock => "make no change (managed block is absent)",
             },
         )?;
+        if outcome.analysis.has_manual_integration() {
+            output.write_label_value("Manual integration:", "detected; it would remain")?;
+        }
         return Ok(());
     }
 
-    match action {
-        super::UninstallAction::Remove => {
+    match outcome.action {
+        UninstallAction::RemoveManaged => {
             writeln!(
                 output,
-                "DStack shell integration was removed from {}.",
+                "Removed DStack-managed shell integration from {}.",
                 profile.display()
             )?;
-            writeln!(
-                output,
-                "\nThe currently running shell may still have the adapter loaded."
-            )?;
-            writeln!(output, "Open a new terminal or reload/restart the shell.")?;
+            if outcome.analysis.has_manual_integration() {
+                writeln!(
+                    output,
+                    "\nA manual DStack loader still remains in:\n  {}",
+                    profile.display()
+                )?;
+                write_manual_removal(output, detected.kind, &outcome.analysis)?;
+            } else {
+                writeln!(
+                    output,
+                    "\nThe currently running shell may still have the adapter loaded."
+                )?;
+                writeln!(output, "Open a new terminal or reload/restart the shell.")?;
+            }
         }
-        super::UninstallAction::NoOp => {
-            writeln!(
-                output,
-                "DStack shell integration was not installed in {}; nothing needed removal.",
-                profile.display()
-            )?;
+        UninstallAction::NoManagedBlock => {
+            if outcome.analysis.has_manual_integration() {
+                writeln!(
+                    output,
+                    "DStack shell integration is installed manually in:\n  {}",
+                    profile.display()
+                )?;
+                writeln!(output, "\nNo DStack-managed block was removed.")?;
+                write_manual_removal(output, detected.kind, &outcome.analysis)?;
+            } else {
+                writeln!(
+                    output,
+                    "DStack shell integration was not installed in {}; nothing needed removal.",
+                    profile.display()
+                )?;
+            }
         }
     }
     Ok(())
@@ -241,19 +299,53 @@ pub fn integration_guidance(environment: &ManagementEnvironment) -> String {
             );
         }
     };
-    let loader = manual_loader(detected.kind, "\n")
-        .lines()
-        .map(|line| format!("  {line}"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let analysis = match profile_analysis(&profile, detected.kind) {
+        Ok(analysis) => analysis,
+        Err(error) => {
+            return format!(
+                "Detected shell: {}\nProfile: {}\n\nDStack could not safely inspect the profile:\n  {error}\n\nInspect it with:\n\n  dstack shell status --shell {}",
+                detected.kind.label(),
+                profile.display(),
+                detected.kind
+            );
+        }
+    };
     let reload = reload_instruction(detected.kind, &profile)
         .unwrap_or_else(|| "open a new terminal".to_owned());
-    format!(
-        "Set it up automatically:\n\n  dstack shell install\n\nDetected shell: {}\nProfile: {}\n\nOr add this loader manually to {}:\n\n{loader}\n\nThen reload it:\n\n  {reload}",
-        detected.kind.label(),
-        profile.display(),
-        profile.display()
-    )
+    match analysis.integration() {
+        ProfileIntegration::ManagedCurrent | ProfileIntegration::ManualCurrent => format!(
+            "DStack shell integration is already installed {} in:\n  {}\n\nThe current terminal has not loaded the adapter. Reload it:\n\n  {reload}\n\nor open a new terminal.",
+            if analysis.integration() == ProfileIntegration::ManualCurrent {
+                "manually"
+            } else {
+                "as a managed block"
+            },
+            profile.display()
+        ),
+        ProfileIntegration::ManagedOutdated => format!(
+            "The managed DStack shell integration in {} has an update available.\n\nUpdate it with:\n\n  dstack shell install\n\nThen reload it:\n\n  {reload}",
+            profile.display()
+        ),
+        ProfileIntegration::ManualLegacy => format!(
+            "DStack found an outdated manual shell loader in:\n  {}\n\n{}",
+            profile.display(),
+            manual_replacement_text(detected.kind, &analysis)
+        ),
+        ProfileIntegration::Duplicate => format!(
+            "DStack found duplicate or conflicting shell integrations in:\n  {}\n\nDo not install another loader. Inspect the profile with:\n\n  dstack shell status --shell {}",
+            profile.display(),
+            detected.kind
+        ),
+        ProfileIntegration::NotInstalled => {
+            let loader = indented_loader(&manual_loader(detected.kind, "\n"));
+            format!(
+                "Set it up automatically:\n\n  dstack shell install\n\nDetected shell: {}\nProfile: {}\n\nOr add this loader manually to {}:\n\n{loader}\n\nThen reload it:\n\n  {reload}",
+                detected.kind.label(),
+                profile.display(),
+                profile.display()
+            )
+        }
+    }
 }
 
 fn select_shell(
@@ -284,10 +376,106 @@ fn write_shell_selection(
 
 fn integration_label(integration: ProfileIntegration) -> &'static str {
     match integration {
-        ProfileIntegration::Missing => "not installed",
-        ProfileIntegration::Current => "installed",
-        ProfileIntegration::Outdated => "installed (update available)",
+        ProfileIntegration::NotInstalled => "not installed",
+        ProfileIntegration::ManagedCurrent => "installed (managed)",
+        ProfileIntegration::ManagedOutdated => "update available (managed)",
+        ProfileIntegration::ManualCurrent => "installed (manual)",
+        ProfileIntegration::ManualLegacy => "outdated (manual)",
+        ProfileIntegration::Duplicate => "duplicate",
     }
+}
+
+fn blocked_install_result(
+    profile: &Path,
+    shell: ShellKind,
+    analysis: &ProfileIntegrationAnalysis,
+) -> Result<(), AppError> {
+    match analysis.integration() {
+        ProfileIntegration::ManualLegacy | ProfileIntegration::Duplicate => {
+            Err(integration_conflict(profile, shell, analysis).into())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn integration_conflict(
+    profile: &Path,
+    shell: ShellKind,
+    analysis: &ProfileIntegrationAnalysis,
+) -> ShellError {
+    let reason = match analysis.integration() {
+        ProfileIntegration::ManualLegacy => manual_replacement_text(shell, analysis),
+        ProfileIntegration::Duplicate => {
+            let managed = match analysis.managed {
+                ManagedIntegration::Missing => "no managed block".to_owned(),
+                ManagedIntegration::Current => "a current managed block".to_owned(),
+                ManagedIntegration::Outdated => "an outdated managed block".to_owned(),
+            };
+            format!(
+                "Duplicate DStack shell integration detected: {managed}, {} current manual loader(s), and {} outdated manual loader(s).\n\nRemove duplicate manually authored loaders or the managed block before running install again. Manual profile content is never rewritten automatically.",
+                analysis.manual_current.len(),
+                analysis.manual_legacy.len()
+            )
+        }
+        _ => "the profile integration state changed unexpectedly".to_owned(),
+    };
+    ShellError::ProfileIntegrationConflict {
+        path: profile.to_path_buf(),
+        reason,
+    }
+}
+
+fn manual_replacement_text(shell: ShellKind, analysis: &ProfileIntegrationAnalysis) -> String {
+    let lines = analysis
+        .manual_legacy
+        .iter()
+        .map(|occurrence| occurrence.line.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "The profile uses an older DStack shell loader at line(s) {lines}.\n\nReplace:\n{}\n\nwith:\n{}",
+        indented_loader(legacy_manual_loader(shell)),
+        indented_loader(&manual_loader(shell, "\n"))
+    )
+}
+
+fn write_manual_replacement(
+    output: &mut Output<'_>,
+    shell: ShellKind,
+    analysis: &ProfileIntegrationAnalysis,
+) -> std::io::Result<()> {
+    writeln!(output, "\n{}", manual_replacement_text(shell, analysis))
+}
+
+fn write_manual_removal(
+    output: &mut Output<'_>,
+    shell: ShellKind,
+    analysis: &ProfileIntegrationAnalysis,
+) -> std::io::Result<()> {
+    writeln!(output, "\nManual profile content remains user-owned.")?;
+    if !analysis.manual_current.is_empty() {
+        writeln!(
+            output,
+            "To remove the current manual integration, delete:\n{}",
+            indented_loader(&manual_loader(shell, "\n"))
+        )?;
+    }
+    if !analysis.manual_legacy.is_empty() {
+        writeln!(
+            output,
+            "To remove the outdated manual integration, delete:\n{}",
+            indented_loader(legacy_manual_loader(shell))
+        )?;
+    }
+    Ok(())
+}
+
+fn indented_loader(loader: &str) -> String {
+    loader
+        .lines()
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn write_reload(output: &mut Output<'_>, shell: ShellKind, profile: &Path) -> std::io::Result<()> {

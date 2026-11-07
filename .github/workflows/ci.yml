@@ -307,3 +307,39 @@ jobs:
           if ((Get-Content -Raw -LiteralPath $profile) -match "DStack shell integration") {
             throw "PowerShell integration uninstall left its managed block behind"
           }
+
+          $manualProfile = Join-Path $env:RUNNER_TEMP "dstack manual profile's `$value; & λ.ps1"
+          $manualLoader = @'
+          & {
+            $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction Stop).Source
+            Invoke-Expression ((& $dstackApplication shell __init powershell) -join "`n")
+          }
+          '@
+          Set-Content -LiteralPath $manualProfile -Value $manualLoader
+          $manualBefore = Get-Content -Raw -LiteralPath $manualProfile
+
+          dstack shell install --shell powershell --profile $manualProfile
+          $manualInstall = $LASTEXITCODE
+          $manualAfterInstall = Get-Content -Raw -LiteralPath $manualProfile
+          if ($manualInstall -ne 0 -or $manualAfterInstall -cne $manualBefore) {
+            throw "PowerShell manual integration was not recognized byte-for-byte"
+          }
+
+          . $manualProfile
+          $manualStatus = @(dstack shell status --shell powershell --profile $manualProfile) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or $manualStatus -notmatch "Profile integration: installed \(manual\)" -or $manualStatus -notmatch "Current terminal adapter: active") {
+            throw "PowerShell manual integration status was not manual and active"
+          }
+          dstack use $stackName
+          if ($LASTEXITCODE -ne 0 -or -not $env:DSTACK_SESSION) {
+            throw "PowerShell manual adapter did not activate DSTACK_SESSION"
+          }
+          dstack unset
+          if ($LASTEXITCODE -ne 0 -or (Test-Path Env:DSTACK_SESSION)) {
+            throw "PowerShell manual adapter did not clear DSTACK_SESSION"
+          }
+          dstack shell uninstall --shell powershell --profile $manualProfile
+          $manualAfterUninstall = Get-Content -Raw -LiteralPath $manualProfile
+          if ($LASTEXITCODE -ne 0 -or $manualAfterUninstall -cne $manualBefore) {
+            throw "PowerShell uninstall modified the user-owned manual loader"
+          }

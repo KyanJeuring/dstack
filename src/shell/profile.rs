@@ -9,10 +9,10 @@ use std::{
 
 use atomic_write_file::AtomicWriteFile;
 
-use super::{DetectedShell, ShellError, ShellKind};
-
-pub const MANAGED_BLOCK_START: &str = "# >>> DStack shell integration >>>";
-pub const MANAGED_BLOCK_END: &str = "# <<< DStack shell integration <<<";
+use super::{
+    DetectedShell, ProfileIntegration, ProfileIntegrationAnalysis, ShellError, ShellKind,
+    integration::analyze_profile_contents, managed_block,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct ProfileEnvironment {
@@ -149,104 +149,70 @@ fn is_powershell_name(value: &OsStr) -> bool {
     )
 }
 
-pub fn managed_block(shell: ShellKind, line_ending: &str) -> String {
-    let body = match shell {
-        ShellKind::Bash => [
-            MANAGED_BLOCK_START,
-            "if command -v dstack >/dev/null 2>&1; then",
-            "  eval \"$(command dstack shell __init bash)\"",
-            "fi",
-            MANAGED_BLOCK_END,
-        ]
-        .as_slice(),
-        ShellKind::Zsh => [
-            MANAGED_BLOCK_START,
-            "if command -v dstack >/dev/null 2>&1; then",
-            "  eval \"$(command dstack shell __init zsh)\"",
-            "fi",
-            MANAGED_BLOCK_END,
-        ]
-        .as_slice(),
-        ShellKind::Fish => [
-            MANAGED_BLOCK_START,
-            "if type -q dstack",
-            "    command dstack shell __init fish | source",
-            "end",
-            MANAGED_BLOCK_END,
-        ]
-        .as_slice(),
-        ShellKind::Powershell => [
-            MANAGED_BLOCK_START,
-            "& {",
-            "  $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction SilentlyContinue).Source",
-            "  if ($null -ne $dstackApplication) {",
-            "    Invoke-Expression ((& $dstackApplication shell __init powershell) -join \"`n\")",
-            "  }",
-            "}",
-            MANAGED_BLOCK_END,
-        ]
-        .as_slice(),
-    };
-    body.join(line_ending)
-}
-
-pub fn manual_loader(shell: ShellKind, line_ending: &str) -> String {
-    match shell {
-        ShellKind::Bash => "eval \"$(command dstack shell __init bash)\"".to_owned(),
-        ShellKind::Zsh => "eval \"$(command dstack shell __init zsh)\"".to_owned(),
-        ShellKind::Fish => "command dstack shell __init fish | source".to_owned(),
-        ShellKind::Powershell => [
-            "& {",
-            "  $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction Stop).Source",
-            "  Invoke-Expression ((& $dstackApplication shell __init powershell) -join \"`n\")",
-            "}",
-        ]
-        .join(line_ending),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProfileIntegration {
-    Missing,
-    Current,
-    Outdated,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallAction {
-    Add,
-    Replace,
-    NoOp,
+    AddManaged,
+    ReplaceManaged,
+    AlreadyManaged,
+    AlreadyManual,
+    BlockedLegacyManual,
+    BlockedDuplicate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UninstallAction {
-    Remove,
-    NoOp,
+    RemoveManaged,
+    NoManagedBlock,
 }
 
-pub fn profile_status(path: &Path, shell: ShellKind) -> Result<ProfileIntegration, ShellError> {
-    inspect(path, shell).map(|profile| profile.integration)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallOutcome {
+    pub action: InstallAction,
+    pub analysis: ProfileIntegrationAnalysis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UninstallOutcome {
+    pub action: UninstallAction,
+    pub analysis: ProfileIntegrationAnalysis,
+}
+
+pub fn profile_analysis(
+    path: &Path,
+    shell: ShellKind,
+) -> Result<ProfileIntegrationAnalysis, ShellError> {
+    inspect(path, shell).map(|profile| profile.analysis)
 }
 
 pub fn install_profile(
     path: &Path,
     shell: ShellKind,
     dry_run: bool,
-) -> Result<InstallAction, ShellError> {
+) -> Result<InstallOutcome, ShellError> {
     let profile = inspect(path, shell)?;
-    let action = match profile.integration {
-        ProfileIntegration::Missing => InstallAction::Add,
-        ProfileIntegration::Outdated => InstallAction::Replace,
-        ProfileIntegration::Current => InstallAction::NoOp,
+    let action = match profile.analysis.integration() {
+        ProfileIntegration::NotInstalled => InstallAction::AddManaged,
+        ProfileIntegration::ManagedOutdated => InstallAction::ReplaceManaged,
+        ProfileIntegration::ManagedCurrent => InstallAction::AlreadyManaged,
+        ProfileIntegration::ManualCurrent => InstallAction::AlreadyManual,
+        ProfileIntegration::ManualLegacy => InstallAction::BlockedLegacyManual,
+        ProfileIntegration::Duplicate => InstallAction::BlockedDuplicate,
     };
-    if dry_run || action == InstallAction::NoOp {
-        return Ok(action);
+    if dry_run
+        || !matches!(
+            action,
+            InstallAction::AddManaged | InstallAction::ReplaceManaged
+        )
+    {
+        return Ok(InstallOutcome {
+            action,
+            analysis: profile.analysis,
+        });
     }
     ensure_writable(&profile)?;
 
     let block = managed_block(shell, profile.line_ending);
-    let contents = match profile.block.clone() {
+    let contents = match profile.analysis.managed_range.clone() {
         Some(range) => {
             let mut replacement = block;
             if profile.contents[range.clone()].ends_with('\n') {
@@ -263,22 +229,38 @@ pub fn install_profile(
         ),
     };
     write_profile(&profile, contents.as_bytes())?;
-    Ok(action)
+    Ok(InstallOutcome {
+        action,
+        analysis: profile.analysis,
+    })
 }
 
-pub fn uninstall_profile(path: &Path, dry_run: bool) -> Result<UninstallAction, ShellError> {
-    let profile = inspect_without_expected(path)?;
-    let Some(range) = profile.block.clone() else {
-        return Ok(UninstallAction::NoOp);
+pub fn uninstall_profile(
+    path: &Path,
+    shell: ShellKind,
+    dry_run: bool,
+) -> Result<UninstallOutcome, ShellError> {
+    let profile = inspect(path, shell)?;
+    let Some(range) = profile.analysis.managed_range.clone() else {
+        return Ok(UninstallOutcome {
+            action: UninstallAction::NoManagedBlock,
+            analysis: profile.analysis,
+        });
     };
     if dry_run {
-        return Ok(UninstallAction::Remove);
+        return Ok(UninstallOutcome {
+            action: UninstallAction::RemoveManaged,
+            analysis: profile.analysis,
+        });
     }
     ensure_writable(&profile)?;
     let mut contents = profile.contents.clone();
     contents.replace_range(range, "");
     write_profile(&profile, contents.as_bytes())?;
-    Ok(UninstallAction::Remove)
+    Ok(UninstallOutcome {
+        action: UninstallAction::RemoveManaged,
+        analysis: profile.analysis,
+    })
 }
 
 #[derive(Debug)]
@@ -288,43 +270,22 @@ struct InspectedProfile {
     metadata: Option<Metadata>,
     contents: String,
     line_ending: &'static str,
-    block: Option<std::ops::Range<usize>>,
-    integration: ProfileIntegration,
+    analysis: ProfileIntegrationAnalysis,
 }
 
 fn inspect(path: &Path, shell: ShellKind) -> Result<InspectedProfile, ShellError> {
-    let mut profile = inspect_without_expected(path)?;
-    profile.integration = match profile.block.clone() {
-        None => ProfileIntegration::Missing,
-        Some(range) => {
-            let mut expected = managed_block(shell, profile.line_ending);
-            if profile.contents[range.clone()].ends_with('\n') {
-                expected.push_str(profile.line_ending);
-            }
-            if profile.contents[range] == expected {
-                ProfileIntegration::Current
-            } else {
-                ProfileIntegration::Outdated
-            }
-        }
-    };
-    Ok(profile)
-}
-
-fn inspect_without_expected(path: &Path) -> Result<InspectedProfile, ShellError> {
     let (target_path, metadata, bytes) = read_profile(path)?;
     let contents = String::from_utf8(bytes)
         .map_err(|_| ShellError::InvalidProfileEncoding(path.to_path_buf()))?;
-    let block = parse_managed_block(path, &contents)?;
     let line_ending = detect_line_ending(&contents);
+    let analysis = analyze_profile_contents(path, shell, &contents, line_ending)?;
     Ok(InspectedProfile {
         display_path: path.to_path_buf(),
         target_path,
         metadata,
         contents,
         line_ending,
-        block,
-        integration: ProfileIntegration::Missing,
+        analysis,
     })
 }
 
@@ -366,67 +327,6 @@ fn read_profile(path: &Path) -> Result<(PathBuf, Option<Metadata>, Vec<u8>), She
             action: "inspect shell profile",
             path: path.to_path_buf(),
             source,
-        }),
-    }
-}
-
-fn parse_managed_block(
-    path: &Path,
-    contents: &str,
-) -> Result<Option<std::ops::Range<usize>>, ShellError> {
-    #[derive(Clone, Copy)]
-    struct Line<'a> {
-        text: &'a str,
-        start: usize,
-        full_end: usize,
-    }
-
-    let mut lines = Vec::new();
-    let mut offset = 0;
-    while offset < contents.len() {
-        let remaining = &contents[offset..];
-        let (raw_end, full_end) = match remaining.find('\n') {
-            Some(index) => (offset + index, offset + index + 1),
-            None => (contents.len(), contents.len()),
-        };
-        let text_end = if raw_end > offset && contents.as_bytes()[raw_end - 1] == b'\r' {
-            raw_end - 1
-        } else {
-            raw_end
-        };
-        lines.push(Line {
-            text: &contents[offset..text_end],
-            start: offset,
-            full_end,
-        });
-        offset = full_end;
-    }
-
-    let starts = lines
-        .iter()
-        .filter(|line| line.text == MANAGED_BLOCK_START)
-        .collect::<Vec<_>>();
-    let ends = lines
-        .iter()
-        .filter(|line| line.text == MANAGED_BLOCK_END)
-        .collect::<Vec<_>>();
-    match (starts.as_slice(), ends.as_slice()) {
-        ([], []) => Ok(None),
-        ([start], [end]) if start.start < end.start => Ok(Some(start.start..end.full_end)),
-        ([start], [end]) => Err(ShellError::CorruptManagedBlock {
-            path: path.to_path_buf(),
-            reason: format!(
-                "closing marker at byte {} precedes opening marker at byte {}",
-                end.start, start.start
-            ),
-        }),
-        _ => Err(ShellError::CorruptManagedBlock {
-            path: path.to_path_buf(),
-            reason: format!(
-                "found {} opening marker(s) and {} closing marker(s)",
-                starts.len(),
-                ends.len()
-            ),
         }),
     }
 }
@@ -492,7 +392,10 @@ fn write_profile(profile: &InspectedProfile, contents: &[u8]) -> Result<(), Shel
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::DetectionSource;
+    use crate::shell::{
+        DetectionSource, MANAGED_BLOCK_END, MANAGED_BLOCK_START, legacy_manual_loader,
+        manual_loader,
+    };
     use tempfile::TempDir;
 
     struct FixedPowerShell(PathBuf);
@@ -574,18 +477,24 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let profile = temp.path().join("nested/配置/profile");
         assert_eq!(
-            install_profile(&profile, ShellKind::Bash, false).unwrap(),
-            InstallAction::Add
+            install_profile(&profile, ShellKind::Bash, false)
+                .unwrap()
+                .action,
+            InstallAction::AddManaged
         );
         let first = fs::read(&profile).unwrap();
         assert_eq!(
-            install_profile(&profile, ShellKind::Bash, false).unwrap(),
-            InstallAction::NoOp
+            install_profile(&profile, ShellKind::Bash, false)
+                .unwrap()
+                .action,
+            InstallAction::AlreadyManaged
         );
         assert_eq!(fs::read(&profile).unwrap(), first);
         assert_eq!(
-            profile_status(&profile, ShellKind::Bash).unwrap(),
-            ProfileIntegration::Current
+            profile_analysis(&profile, ShellKind::Bash)
+                .unwrap()
+                .integration(),
+            ProfileIntegration::ManagedCurrent
         );
     }
 
@@ -599,7 +508,7 @@ mod tests {
         let installed = fs::read_to_string(&profile).unwrap();
         assert!(installed.starts_with(MANAGED_BLOCK_START));
         assert!(installed.ends_with(original));
-        uninstall_profile(&profile, false).unwrap();
+        uninstall_profile(&profile, ShellKind::Zsh, false).unwrap();
         assert_eq!(fs::read_to_string(&profile).unwrap(), original);
     }
 
@@ -613,8 +522,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            install_profile(&profile, ShellKind::Fish, false).unwrap(),
-            InstallAction::Replace
+            install_profile(&profile, ShellKind::Fish, false)
+                .unwrap()
+                .action,
+            InstallAction::ReplaceManaged
         );
         let value = fs::read_to_string(&profile).unwrap();
         assert!(value.starts_with("before\n"));
@@ -654,8 +565,10 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let missing = temp.path().join("missing/parent/profile");
         assert_eq!(
-            install_profile(&missing, ShellKind::Bash, true).unwrap(),
-            InstallAction::Add
+            install_profile(&missing, ShellKind::Bash, true)
+                .unwrap()
+                .action,
+            InstallAction::AddManaged
         );
         assert!(!missing.exists());
 
@@ -667,12 +580,16 @@ mod tests {
         .unwrap();
         let before = fs::read(&profile).unwrap();
         assert_eq!(
-            install_profile(&profile, ShellKind::Bash, true).unwrap(),
-            InstallAction::Replace
+            install_profile(&profile, ShellKind::Bash, true)
+                .unwrap()
+                .action,
+            InstallAction::ReplaceManaged
         );
         assert_eq!(
-            uninstall_profile(&profile, true).unwrap(),
-            UninstallAction::Remove
+            uninstall_profile(&profile, ShellKind::Bash, true)
+                .unwrap()
+                .action,
+            UninstallAction::RemoveManaged
         );
         assert_eq!(fs::read(&profile).unwrap(), before);
     }
@@ -695,7 +612,7 @@ mod tests {
             fs::write(&profile, value).unwrap();
             let before = fs::read(&profile).unwrap();
             assert!(install_profile(&profile, ShellKind::Bash, false).is_err());
-            assert!(uninstall_profile(&profile, false).is_err());
+            assert!(uninstall_profile(&profile, ShellKind::Bash, false).is_err());
             assert_eq!(fs::read(&profile).unwrap(), before);
         }
     }
@@ -707,20 +624,124 @@ mod tests {
         fs::write(&profile, "user line\n").unwrap();
         install_profile(&profile, ShellKind::Bash, false).unwrap();
         assert_eq!(
-            uninstall_profile(&profile, false).unwrap(),
-            UninstallAction::Remove
+            uninstall_profile(&profile, ShellKind::Bash, false)
+                .unwrap()
+                .action,
+            UninstallAction::RemoveManaged
         );
         assert_eq!(fs::read_to_string(&profile).unwrap(), "user line\n");
         assert_eq!(
-            uninstall_profile(&profile, false).unwrap(),
-            UninstallAction::NoOp
+            uninstall_profile(&profile, ShellKind::Bash, false)
+                .unwrap()
+                .action,
+            UninstallAction::NoManagedBlock
         );
 
         let empty = temp.path().join("empty");
         install_profile(&empty, ShellKind::Bash, false).unwrap();
-        uninstall_profile(&empty, false).unwrap();
+        uninstall_profile(&empty, ShellKind::Bash, false).unwrap();
         assert!(empty.is_file());
         assert!(fs::read(&empty).unwrap().is_empty());
+    }
+
+    #[test]
+    fn canonical_manual_installations_are_byte_idempotent_for_every_shell() {
+        let temp = TempDir::new().unwrap();
+        for shell in [
+            ShellKind::Bash,
+            ShellKind::Zsh,
+            ShellKind::Fish,
+            ShellKind::Powershell,
+        ] {
+            let profile = temp.path().join(format!("manual-{shell}"));
+            let original = format!(
+                "export BEFORE=1\n{}\nexport AFTER=1\n",
+                manual_loader(shell, "\n")
+            );
+            fs::write(&profile, &original).unwrap();
+            let before = fs::read(&profile).unwrap();
+            let outcome = install_profile(&profile, shell, false).unwrap();
+            assert_eq!(outcome.action, InstallAction::AlreadyManual);
+            assert_eq!(
+                outcome.analysis.integration(),
+                ProfileIntegration::ManualCurrent
+            );
+            assert_eq!(fs::read(&profile).unwrap(), before);
+            assert!(!original.contains(MANAGED_BLOCK_START));
+            assert_eq!(original.matches(&manual_loader(shell, "\n")).count(), 1);
+        }
+    }
+
+    #[test]
+    fn legacy_and_duplicate_installations_are_blocked_before_writing() {
+        let temp = TempDir::new().unwrap();
+        for shell in [ShellKind::Bash, ShellKind::Zsh] {
+            let profile = temp.path().join(format!("legacy-{shell}"));
+            fs::write(&profile, format!("{}\n", legacy_manual_loader(shell))).unwrap();
+            let before = fs::read(&profile).unwrap();
+            let outcome = install_profile(&profile, shell, false).unwrap();
+            assert_eq!(outcome.action, InstallAction::BlockedLegacyManual);
+            assert_eq!(fs::read(&profile).unwrap(), before);
+        }
+
+        let cases = [
+            format!(
+                "{}\n{}\n",
+                manual_loader(ShellKind::Bash, "\n"),
+                manual_loader(ShellKind::Bash, "\n")
+            ),
+            format!(
+                "{}\n{}\n",
+                manual_loader(ShellKind::Bash, "\n"),
+                legacy_manual_loader(ShellKind::Bash)
+            ),
+            format!(
+                "{}\n{}\n",
+                managed_block(ShellKind::Bash, "\n"),
+                manual_loader(ShellKind::Bash, "\n")
+            ),
+        ];
+        for (index, contents) in cases.iter().enumerate() {
+            let profile = temp.path().join(format!("duplicate-{index}"));
+            fs::write(&profile, contents).unwrap();
+            let before = fs::read(&profile).unwrap();
+            let outcome = install_profile(&profile, ShellKind::Bash, false).unwrap();
+            assert_eq!(outcome.action, InstallAction::BlockedDuplicate);
+            assert_eq!(
+                outcome.analysis.integration(),
+                ProfileIntegration::Duplicate
+            );
+            assert_eq!(fs::read(&profile).unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn uninstall_removes_only_managed_content_and_never_manual_loaders() {
+        let temp = TempDir::new().unwrap();
+        let manual = manual_loader(ShellKind::Bash, "\n");
+        let manual_only = temp.path().join("manual-only");
+        fs::write(&manual_only, format!("before\n{manual}\nafter\n")).unwrap();
+        let before = fs::read(&manual_only).unwrap();
+        let outcome = uninstall_profile(&manual_only, ShellKind::Bash, false).unwrap();
+        assert_eq!(outcome.action, UninstallAction::NoManagedBlock);
+        assert_eq!(fs::read(&manual_only).unwrap(), before);
+
+        let mixed = temp.path().join("managed-and-manual");
+        fs::write(
+            &mixed,
+            format!(
+                "{}\nbefore\n{manual}\nafter\n",
+                managed_block(ShellKind::Bash, "\n")
+            ),
+        )
+        .unwrap();
+        let outcome = uninstall_profile(&mixed, ShellKind::Bash, false).unwrap();
+        assert_eq!(outcome.action, UninstallAction::RemoveManaged);
+        assert!(outcome.analysis.has_manual_integration());
+        assert_eq!(
+            fs::read_to_string(&mixed).unwrap(),
+            format!("before\n{manual}\nafter\n")
+        );
     }
 
     #[cfg(unix)]
@@ -746,7 +767,7 @@ mod tests {
             fs::metadata(&target).unwrap().permissions().mode() & 0o777,
             0o640
         );
-        uninstall_profile(&profile, false).unwrap();
+        uninstall_profile(&profile, ShellKind::Bash, false).unwrap();
         assert!(
             fs::symlink_metadata(&profile)
                 .unwrap()

@@ -19,6 +19,10 @@ pub enum ShellError {
         path: PathBuf,
         reason: String,
     },
+    ProfileIntegrationConflict {
+        path: PathBuf,
+        reason: String,
+    },
     DanglingProfileSymlink(PathBuf),
     ProfileNotFile(PathBuf),
     ReadOnlyProfile(PathBuf),
@@ -61,6 +65,11 @@ impl fmt::Display for ShellError {
             Self::CorruptManagedBlock { path, reason } => write!(
                 formatter,
                 "shell profile '{}' has invalid DStack managed markers ({reason}); it was not changed",
+                path.display()
+            ),
+            Self::ProfileIntegrationConflict { path, reason } => write!(
+                formatter,
+                "shell profile '{}' has a DStack shell integration that requires manual attention; no changes were made\n\n{reason}",
                 path.display()
             ),
             Self::DanglingProfileSymlink(path) => write!(

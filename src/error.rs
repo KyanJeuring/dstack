@@ -86,7 +86,7 @@ impl fmt::Display for AppError {
             ),
             Self::ShellIntegrationRequired { command, guidance } => write!(
                 formatter,
-                "'{command}' requires DStack shell integration because a child process cannot modify its parent shell.\n\n{guidance}"
+                "'{command}' requires the DStack shell adapter in the current terminal because a child process cannot modify its parent shell.\n\n{guidance}"
             ),
             Self::Output(error) => write!(formatter, "could not write command output: {error}"),
         }

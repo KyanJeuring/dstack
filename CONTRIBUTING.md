@@ -120,6 +120,15 @@ line endings. Unknown detection and malformed markers are safe failures.
 Generated adapters scope `DSTACK_SHELL_ADAPTER` to delegated child processes
 so status can distinguish an installed profile from a loaded adapter.
 
+Phase 7.2 treats shell-profile integration ownership as part of the domain.
+The profile analyzer must distinguish DStack-managed blocks, canonical manual
+loaders, legacy `shell init` manual loaders, duplicates, and corrupt markers.
+Manual loader scanning excludes the managed block span and recognizes only the
+documented shell-specific forms, not arbitrary equivalent shell programs.
+DStack may replace or remove its marked managed block, but manually authored
+loaders are user-owned: install/status/uninstall may detect and explain them
+but must never rewrite, remove, adopt, or normalize them automatically.
+
 Shell management routes before DStack configuration bootstrap. Tests must use
 temporary `--profile` paths and must never edit a developer or CI runner's real
 shell profile. Hidden adapter stdout remains machine-consumable source. Profile

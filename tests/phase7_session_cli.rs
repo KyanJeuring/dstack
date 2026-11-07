@@ -6,7 +6,10 @@ use std::{
 
 use tempfile::TempDir;
 
-use dstack_compose::session::SessionState;
+use dstack_compose::{
+    session::SessionState,
+    shell::{ShellKind, legacy_manual_loader, managed_block, manual_loader},
+};
 
 fn run_dstack(root: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_dstack"))
@@ -146,7 +149,7 @@ fn hidden_shell_init_management_and_direct_public_commands_are_bootstrap_free() 
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stdout.is_empty());
         let stderr = text(output.stderr);
-        assert!(stderr.contains("requires DStack shell integration"));
+        assert!(stderr.contains("requires the DStack shell adapter in the current terminal"));
         assert!(stderr.contains("dstack shell install"));
         assert!(stderr.contains("Detected shell: Bash"));
         assert!(stderr.contains(".bashrc"));
@@ -450,6 +453,66 @@ fn available_zsh_and_fish_profile_management_smoke() {
         assert!(stdout.contains("Current terminal adapter: active"));
         assert!(profile.is_file());
         assert!(fs::read(&profile).unwrap().is_empty());
+
+        let kind = if shell == "zsh" {
+            ShellKind::Zsh
+        } else {
+            ShellKind::Fish
+        };
+        let manual_profile = temp.path().join(format!("manual {shell} profile λ"));
+        let manual_contents = format!("{}\n", manual_loader(kind, "\n"));
+        fs::write(&manual_profile, &manual_contents).unwrap();
+        let install = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "install",
+                "--shell",
+                shell,
+                "--profile",
+                manual_profile.to_str().unwrap(),
+            ],
+        );
+        assert!(install.status.success(), "{}", text(install.stderr));
+        assert!(text(install.stdout).contains("already installed manually"));
+        assert_eq!(
+            fs::read_to_string(&manual_profile).unwrap(),
+            manual_contents
+        );
+
+        let script = if shell == "zsh" {
+            r#"source "$1"; dstack shell status --shell zsh --profile "$1" || exit 30; dstack use profile || exit 31; dstack unset || exit 32; dstack shell uninstall --shell zsh --profile "$1" || exit 33"#
+        } else {
+            r#"source $argv[1]; dstack shell status --shell fish --profile $argv[1]; or exit 30; dstack use profile; or exit 31; dstack unset; or exit 32; dstack shell uninstall --shell fish --profile $argv[1]; or exit 33"#
+        };
+        let mut command = Command::new(shell);
+        command.args(["-c", script]);
+        if shell == "zsh" {
+            command.args(["--", manual_profile.to_str().unwrap()]);
+        } else {
+            command.arg(manual_profile.to_str().unwrap());
+        }
+        let output = command
+            .env("PATH", shell_path())
+            .env("DSTACK_CONFIG_DIR", &root)
+            .env_remove("DSTACK_SESSION")
+            .env_remove("DSTACK_SHELL_ADAPTER")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{shell} manual profile workflow failed: {}",
+            text(output.stderr)
+        );
+        let stdout = text(output.stdout);
+        assert!(stdout.contains("Profile integration: installed (manual)"));
+        assert!(stdout.contains("Current terminal adapter: active"));
+        assert!(stdout.contains("No DStack-managed block was removed"));
+        assert_eq!(
+            fs::read_to_string(&manual_profile).unwrap(),
+            manual_contents
+        );
     }
 }
 
@@ -537,6 +600,60 @@ dstack shell status --profile "$1" || exit 29
     assert!(fs::read(&profile).unwrap().is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn bash_manual_profile_workflow_remains_user_owned() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("state");
+    let active = project(temp.path(), "active", &["compose.yaml"]);
+    register(&root, &active);
+    let profile = temp.path().join("manual bash profile λ");
+    let original = format!(
+        "export BEFORE=1\n{}\nexport AFTER=1\n",
+        manual_loader(ShellKind::Bash, "\n")
+    );
+    fs::write(&profile, &original).unwrap();
+
+    let install = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "install",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(install.status.success(), "{}", text(install.stderr));
+    assert_eq!(fs::read_to_string(&profile).unwrap(), original);
+
+    let script = r#"
+source "$1" || exit 20
+dstack shell status --shell bash --profile "$1" || exit 21
+dstack use profile || exit 22
+test -n "$DSTACK_SESSION" || exit 23
+dstack unset || exit 24
+test -z "${DSTACK_SESSION+x}" || exit 25
+dstack shell uninstall --shell bash --profile "$1" || exit 26
+"#;
+    let output = Command::new("bash")
+        .args(["-c", script, "--", profile.to_str().unwrap()])
+        .env("PATH", shell_path())
+        .env("DSTACK_CONFIG_DIR", &root)
+        .env_remove("DSTACK_SESSION")
+        .env_remove("DSTACK_SHELL_ADAPTER")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(output.stderr));
+    let stdout = text(output.stdout);
+    assert!(stdout.contains("Profile integration: installed (manual)"));
+    assert!(stdout.contains("Current terminal adapter: active"));
+    assert!(stdout.contains("No DStack-managed block was removed"));
+    assert_eq!(fs::read_to_string(&profile).unwrap(), original);
+}
+
 #[test]
 fn unknown_detection_fails_without_profile_or_dstack_state_changes() {
     let temp = TempDir::new().unwrap();
@@ -578,4 +695,440 @@ fn unknown_detection_fails_without_profile_or_dstack_state_changes() {
         assert!(!diagnostic.contains("Profile:"));
         assert!(!root.exists());
     }
+}
+
+#[test]
+fn canonical_manual_installations_are_detected_without_duplicate_profile_changes() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("state");
+    let cases = [
+        ("bash", ShellKind::Bash),
+        ("zsh", ShellKind::Zsh),
+        ("fish", ShellKind::Fish),
+        ("powershell", ShellKind::Powershell),
+    ];
+    for (name, shell) in cases {
+        let profile = temp.path().join(format!("manual {name} λ"));
+        let loader = manual_loader(shell, "\n");
+        let original = format!("export BEFORE=1\n{loader}\nexport AFTER=1\n");
+        fs::write(&profile, &original).unwrap();
+        let before = fs::read(&profile).unwrap();
+
+        let install = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "install",
+                "--shell",
+                name,
+                "--profile",
+                profile.to_str().unwrap(),
+            ],
+        );
+        assert!(install.status.success(), "{}", text(install.stderr));
+        let stdout = text(install.stdout);
+        assert!(stdout.contains("already installed manually"), "{stdout}");
+        assert!(stdout.contains("No managed block was added"), "{stdout}");
+        assert_eq!(fs::read(&profile).unwrap(), before);
+        assert!(!original.contains("# >>> DStack shell integration >>>"));
+        assert_eq!(original.matches(&loader).count(), 1);
+
+        let status = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "status",
+                "--shell",
+                name,
+                "--profile",
+                profile.to_str().unwrap(),
+            ],
+        );
+        assert!(status.status.success(), "{}", text(status.stderr));
+        assert!(text(status.stdout).contains("Profile integration: installed (manual)"));
+
+        let dry_run = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "install",
+                "--shell",
+                name,
+                "--profile",
+                profile.to_str().unwrap(),
+                "--dry-run",
+            ],
+        );
+        assert!(dry_run.status.success(), "{}", text(dry_run.stderr));
+        assert!(text(dry_run.stdout).contains("already installed manually"));
+        assert_eq!(fs::read(&profile).unwrap(), before);
+
+        let uninstall_dry_run = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "uninstall",
+                "--shell",
+                name,
+                "--profile",
+                profile.to_str().unwrap(),
+                "--dry-run",
+            ],
+        );
+        assert!(
+            uninstall_dry_run.status.success(),
+            "{}",
+            text(uninstall_dry_run.stderr)
+        );
+        let dry_stdout = text(uninstall_dry_run.stdout);
+        assert!(dry_stdout.contains("managed block is absent"));
+        assert!(dry_stdout.contains("Manual integration: detected; it would remain"));
+        assert_eq!(fs::read(&profile).unwrap(), before);
+
+        let uninstall = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "uninstall",
+                "--shell",
+                name,
+                "--profile",
+                profile.to_str().unwrap(),
+            ],
+        );
+        assert!(uninstall.status.success(), "{}", text(uninstall.stderr));
+        let stdout = text(uninstall.stdout);
+        assert!(stdout.contains("installed manually"), "{stdout}");
+        assert!(
+            stdout.contains("No DStack-managed block was removed"),
+            "{stdout}"
+        );
+        assert_eq!(fs::read(&profile).unwrap(), before);
+    }
+    assert!(!root.exists());
+}
+
+#[test]
+fn legacy_duplicate_and_corrupt_profile_states_are_truthful_and_never_installed_over() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("state");
+    let profile = temp.path().join("profile");
+
+    let missing = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "status",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(missing.status.success(), "{}", text(missing.stderr));
+    assert!(text(missing.stdout).contains("Profile integration: not installed"));
+
+    fs::write(
+        &profile,
+        "# >>> DStack shell integration >>>\nold loader\n# <<< DStack shell integration <<<\n",
+    )
+    .unwrap();
+    let outdated = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "status",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(outdated.status.success(), "{}", text(outdated.stderr));
+    assert!(text(outdated.stdout).contains("Profile integration: update available (managed)"));
+
+    let legacy = legacy_manual_loader(ShellKind::Bash);
+    fs::write(&profile, format!("before\n{legacy}\nafter\n")).unwrap();
+    let before = fs::read(&profile).unwrap();
+
+    let status = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "status",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(status.status.success(), "{}", text(status.stderr));
+    let stdout = text(status.stdout);
+    assert!(stdout.contains("Profile integration: outdated (manual)"));
+    assert!(stdout.contains(legacy));
+    assert!(stdout.contains(&manual_loader(ShellKind::Bash, "\n")));
+
+    let install = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "install",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(install.status.code(), Some(1));
+    assert!(text(install.stderr).contains("older DStack shell loader"));
+    assert_eq!(fs::read(&profile).unwrap(), before);
+
+    let uninstall = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "uninstall",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(uninstall.status.success(), "{}", text(uninstall.stderr));
+    assert!(text(uninstall.stdout).contains("outdated manual integration"));
+    assert_eq!(fs::read(&profile).unwrap(), before);
+
+    let current = manual_loader(ShellKind::Bash, "\n");
+    let duplicate_forms = [
+        format!("{current}\n{current}\n"),
+        format!("{current}\n{legacy}\n"),
+        format!("{}\n{current}\n", managed_block(ShellKind::Bash, "\n")),
+    ];
+    for contents in duplicate_forms {
+        fs::write(&profile, &contents).unwrap();
+        let before = fs::read(&profile).unwrap();
+        let status = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "status",
+                "--shell",
+                "bash",
+                "--profile",
+                profile.to_str().unwrap(),
+            ],
+        );
+        assert_eq!(status.status.code(), Some(1));
+        assert!(text(status.stdout).contains("Profile integration: duplicate"));
+        assert!(text(status.stderr).contains("Duplicate DStack shell integration"));
+        let install = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "install",
+                "--shell",
+                "bash",
+                "--profile",
+                profile.to_str().unwrap(),
+                "--dry-run",
+            ],
+        );
+        assert_eq!(install.status.code(), Some(1));
+        assert!(text(install.stdout).contains("Profile integration: duplicate"));
+        assert_eq!(fs::read(&profile).unwrap(), before);
+        let install = run_dstack(
+            &root,
+            temp.path(),
+            &[
+                "shell",
+                "install",
+                "--shell",
+                "bash",
+                "--profile",
+                profile.to_str().unwrap(),
+            ],
+        );
+        assert_eq!(install.status.code(), Some(1));
+        assert!(text(install.stderr).contains("Duplicate DStack shell integration"));
+        assert_eq!(fs::read(&profile).unwrap(), before);
+        if !contents.contains("# >>> DStack shell integration >>>") {
+            let uninstall = run_dstack(
+                &root,
+                temp.path(),
+                &[
+                    "shell",
+                    "uninstall",
+                    "--shell",
+                    "bash",
+                    "--profile",
+                    profile.to_str().unwrap(),
+                ],
+            );
+            assert!(uninstall.status.success(), "{}", text(uninstall.stderr));
+            let stdout = text(uninstall.stdout);
+            assert!(stdout.contains("No DStack-managed block was removed"));
+            assert!(stdout.contains("Manual profile content remains user-owned"));
+            assert_eq!(fs::read(&profile).unwrap(), before);
+        }
+    }
+
+    fs::write(&profile, "# >>> DStack shell integration >>>\nvalue\n").unwrap();
+    let corrupt = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "status",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(corrupt.status.code(), Some(1));
+    assert!(text(corrupt.stderr).contains("invalid DStack managed markers"));
+    assert!(!root.exists());
+}
+
+#[test]
+fn managed_and_manual_uninstall_removes_only_the_managed_block() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("state");
+    let profile = temp.path().join("mixed profile");
+    let manual = manual_loader(ShellKind::Bash, "\n");
+    fs::write(
+        &profile,
+        format!(
+            "{}\nexport BEFORE=1\n{manual}\nexport AFTER=1\n",
+            managed_block(ShellKind::Bash, "\n")
+        ),
+    )
+    .unwrap();
+
+    let dry_run = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "uninstall",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+            "--dry-run",
+        ],
+    );
+    assert!(dry_run.status.success(), "{}", text(dry_run.stderr));
+    let stdout = text(dry_run.stdout);
+    assert!(stdout.contains("Would: remove managed block"));
+    assert!(stdout.contains("Manual integration: detected; it would remain"));
+
+    let uninstall = run_dstack(
+        &root,
+        temp.path(),
+        &[
+            "shell",
+            "uninstall",
+            "--shell",
+            "bash",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(uninstall.status.success(), "{}", text(uninstall.stderr));
+    let stdout = text(uninstall.stdout);
+    assert!(stdout.contains("Removed DStack-managed"));
+    assert!(stdout.contains("manual DStack loader still remains"));
+    assert_eq!(
+        fs::read_to_string(&profile).unwrap(),
+        format!("export BEFORE=1\n{manual}\nexport AFTER=1\n")
+    );
+    assert!(!root.exists());
+}
+
+#[test]
+fn direct_session_guidance_uses_profile_ownership_and_reload_state() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("state");
+    let cases = [
+        ("missing", String::new(), "Set it up automatically", false),
+        (
+            "managed",
+            format!("{}\n", managed_block(ShellKind::Bash, "\n")),
+            "already installed as a managed block",
+            false,
+        ),
+        (
+            "manual",
+            format!("{}\n", manual_loader(ShellKind::Bash, "\n")),
+            "already installed manually",
+            false,
+        ),
+        (
+            "legacy",
+            format!("{}\n", legacy_manual_loader(ShellKind::Bash)),
+            "outdated manual shell loader",
+            true,
+        ),
+        (
+            "duplicate",
+            format!(
+                "{}\n{}\n",
+                managed_block(ShellKind::Bash, "\n"),
+                manual_loader(ShellKind::Bash, "\n")
+            ),
+            "duplicate or conflicting shell integrations",
+            false,
+        ),
+    ];
+    for (name, contents, expected, replacement) in cases {
+        let home = temp.path().join(name);
+        fs::create_dir_all(&home).unwrap();
+        if !contents.is_empty() {
+            fs::write(home.join(".bashrc"), contents).unwrap();
+        }
+        for args in [&["use", "profile"][..], &["unset"][..]] {
+            let output = Command::new(env!("CARGO_BIN_EXE_dstack"))
+                .args(args)
+                .current_dir(temp.path())
+                .env("DSTACK_CONFIG_DIR", &root)
+                .env("HOME", &home)
+                .env("USERPROFILE", &home)
+                .env("SHELL", "/bin/bash")
+                .env_remove("DSTACK_SESSION")
+                .env_remove("DSTACK_SHELL_ADAPTER")
+                .env_remove("MSYSTEM")
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let stderr = text(output.stderr);
+            assert!(stderr.contains(expected), "{name}: {stderr}");
+            if name == "managed" || name == "manual" {
+                assert!(stderr.contains("current terminal has not loaded"));
+                assert!(stderr.contains("source"));
+                assert!(!stderr.contains("Set it up automatically"));
+            }
+            if replacement {
+                assert!(stderr.contains("Replace:"));
+                assert!(stderr.contains("shell __init bash"));
+            }
+            if name == "duplicate" {
+                assert!(stderr.contains("Do not install another loader"));
+                assert!(stderr.contains("dstack shell status"));
+            }
+        }
+    }
+    assert!(!root.exists());
 }
