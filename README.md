@@ -24,7 +24,9 @@ dstack migrate registry [--dry-run]
 dstack list
 dstack use NAME [--file FILE]...
 dstack unset
-dstack shell init <bash|zsh|fish|powershell>
+dstack shell install [--shell SHELL] [--profile PATH] [--dry-run]
+dstack shell status [--shell SHELL] [--profile PATH]
+dstack shell uninstall [--shell SHELL] [--profile PATH] [--dry-run]
 dstack [-s NAME] [--file FILE]... context show
 dstack [-s NAME] [--file FILE]... compose [--] [ARGS...]
 dstack [-s NAME] [--file FILE]... up [--remove-orphans] [SERVICE...]
@@ -101,32 +103,73 @@ terminal selection. Neither session command adds or removes a registry entry.
 `dstack context show` displays the effective stack, source, project, and
 ordered Compose files; an active terminal selection reports `Source: session`.
 
-A child process cannot change its parent shell. Initialize the thin v2 adapter
-for the shell that is actually running:
+A child process cannot change its parent shell. Install the thin v2 adapter in
+the detected shell profile, then follow the printed reload instruction:
+
+```text
+dstack shell install
+```
+
+DStack uses the active adapter, parent process, platform hints, and finally the
+login-shell setting as evidence. It refuses to edit a profile when detection is
+unknown or ambiguous. Select the target explicitly for nested or unusual shell
+setups:
+
+```text
+dstack shell install --shell bash
+dstack shell install --shell zsh
+dstack shell install --shell fish
+dstack shell install --shell powershell
+```
+
+Use `--profile PATH` for custom dotfile layouts or PowerShell hosts whose
+profile cannot be resolved reliably. `dstack shell install --dry-run` reports
+the selected shell, profile, planned action, and managed block without writing
+anything. Inspect or remove integration with:
+
+```text
+dstack shell status
+dstack shell uninstall
+```
+
+Installation adds or updates exactly one marked DStack block and preserves all
+other profile content. Uninstall removes only that block; it does not remove
+DStack, registry data, or `DSTACK_SESSION`. Neither command can reload or
+remove a function in the already-running parent shell, so open a new terminal
+or use the command DStack prints.
+
+For advanced/manual integration, add the loader for the appropriate shell to
+its profile. `__init` is a hidden adapter protocol, not a general public
+command:
 
 ```bash
 # Bash
-eval "$(dstack shell init bash)"
+eval "$(command dstack shell __init bash)"
 
 # Zsh
-eval "$(dstack shell init zsh)"
+eval "$(command dstack shell __init zsh)"
 ```
 
 ```fish
 # Fish
-dstack shell init fish | source
+command dstack shell __init fish | source
 ```
 
 ```powershell
 # PowerShell
-Invoke-Expression ((& dstack shell init powershell) -join "`n")
+& {
+  $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction Stop).Source
+  Invoke-Expression ((& $dstackApplication shell __init powershell) -join "`n")
+}
 ```
 
 The adapter shadows `dstack`, delegates ordinary commands to the executable,
 and intercepts only `use` and `unset`. Running the executable directly for
-those two commands fails with setup guidance instead of pretending it changed
-the parent environment. Phase 7 does not edit shell startup files; add the
-appropriate initialization form manually while developing v2.
+those two commands fails with detected profile, automatic setup, manual setup,
+and reload guidance instead of pretending it changed the parent environment.
+The managed loader resolves the current DStack application each time the
+profile loads, so a later binary upgrade supplies the current adapter without
+rewriting the whole function into the profile.
 
 The active snapshot is exported as one compact, versioned JSON value in
 `DSTACK_SESSION`. It contains the stack name, canonical project path, ordered

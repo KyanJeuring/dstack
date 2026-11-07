@@ -110,8 +110,24 @@ stdout is machine-consumable code; diagnostics belong on stderr. Never write a
 session file, inspect legacy `DSTACK`/`DSTACK_COMPOSE_FILE` as v2 state, or put
 registry/discovery/Compose logic into an adapter.
 
-Phase 7 does not add host lifecycle/prune expansion, self-update, installer
-changes, shell startup-file editing, or completion frameworks.
+Phase 7.1 makes adapter setup practical through public `shell install`,
+`shell status`, and `shell uninstall` commands. The adapter generator and
+mutation endpoints remain hidden as `shell __init`, `shell __activate`, and
+`shell __clear`. Shell detection belongs in the shell subsystem and must keep
+explicit `--shell` authoritative; profile resolution and strict managed-block
+editing must preserve unrelated content, symlinks, permissions, and practical
+line endings. Unknown detection and malformed markers are safe failures.
+Generated adapters scope `DSTACK_SHELL_ADAPTER` to delegated child processes
+so status can distinguish an installed profile from a loaded adapter.
+
+Shell management routes before DStack configuration bootstrap. Tests must use
+temporary `--profile` paths and must never edit a developer or CI runner's real
+shell profile. Hidden adapter stdout remains machine-consumable source. Profile
+installation is not the Phase 9 DStack binary installer and must not alter the
+external production installer or implement release migration.
+
+Phase 7.1 does not add host lifecycle/prune expansion, self-update, production
+installer changes, completion frameworks, or final cutover.
 
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
