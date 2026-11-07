@@ -2,11 +2,15 @@ mod compose;
 mod config;
 mod container;
 mod context;
+mod host;
+mod image;
 mod inspect;
 mod lifecycle;
 mod migration;
+mod network;
 mod registry;
 mod service_command;
+mod volume;
 
 use std::{ffi::OsString, path::PathBuf};
 
@@ -19,11 +23,14 @@ pub use container::{
     ContainerPortsArgs, ContainerStatsArgs,
 };
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
+pub use image::{ImageArgs, ImageCommand, ImageListArgs};
 pub use inspect::{LogsArgs, ServicesCommandArgs};
 pub use lifecycle::{DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs};
 pub use migration::{MigrationArgs, MigrationCommand};
+pub use network::{NetworkArgs, NetworkCommand, NetworkInspectArgs, NetworkListArgs};
 pub use registry::{RegistryArgs, RegistryCommand};
 pub use service_command::{ExecArgs, RunArgs};
+pub use volume::{VolumeArgs, VolumeCommand, VolumeListArgs, VolumeNamesArgs};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -53,6 +60,12 @@ pub enum Command {
     Compose(ComposeArgs),
     /// Inspect host-scoped Docker containers without resolving a stack.
     Container(ContainerArgs),
+    /// Inspect host-scoped Docker images without resolving a stack.
+    Image(ImageArgs),
+    /// Inspect or explicitly remove host-scoped Docker volumes.
+    Volume(VolumeArgs),
+    /// Inspect host-scoped Docker networks without resolving a stack.
+    Network(NetworkArgs),
     /// Create and start services in detached, build-aware mode.
     Up(UpArgs),
     /// Start existing service containers.

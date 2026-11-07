@@ -2,6 +2,8 @@ use std::ffi::OsString;
 
 use clap::{ArgAction, Args, Subcommand};
 
+use super::host::nonempty_filter;
+
 #[derive(Debug, Args)]
 pub struct ContainerArgs {
     #[command(subcommand)]
@@ -74,12 +76,4 @@ pub struct ContainerInspectArgs {
     /// Container names or IDs.
     #[arg(value_name = "CONTAINER", required = true, num_args = 1..)]
     pub containers: Vec<OsString>,
-}
-
-fn nonempty_filter(value: &str) -> Result<String, String> {
-    if value.is_empty() {
-        Err("filter must not be empty".to_owned())
-    } else {
-        Ok(value.to_owned())
-    }
 }

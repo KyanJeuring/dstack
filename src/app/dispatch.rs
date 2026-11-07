@@ -99,6 +99,9 @@ pub(crate) fn run(
             .map(|()| AppOutcome::Success),
         },
         Command::Container(_)
+        | Command::Image(_)
+        | Command::Volume(_)
+        | Command::Network(_)
         | Command::Compose(_)
         | Command::Up(_)
         | Command::Start(_)
@@ -143,7 +146,11 @@ pub(super) fn validate_global_options(
     stack: Option<&str>,
     files: &[PathBuf],
 ) -> Result<(), AppError> {
-    if matches!(command, Command::Container(_)) && (stack.is_some() || !files.is_empty()) {
+    if matches!(
+        command,
+        Command::Container(_) | Command::Image(_) | Command::Volume(_) | Command::Network(_)
+    ) && (stack.is_some() || !files.is_empty())
+    {
         return Err(AppError::InvalidOptions(
             "container/image/volume/network commands are host-scoped and do not accept --stack or --file"
                 .to_owned(),

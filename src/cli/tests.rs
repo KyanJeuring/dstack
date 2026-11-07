@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use clap::CommandFactory;
 
-use super::{Cli, Command, ContainerCommand, ContextCommand, MigrationCommand, RegistryCommand};
+use super::{
+    Cli, Command, ContainerCommand, ContextCommand, ImageCommand, MigrationCommand, NetworkCommand,
+    RegistryCommand, VolumeCommand,
+};
 
 #[test]
 fn parses_bare_invocation_for_application_diagnostic() {
@@ -511,5 +514,65 @@ fn legacy_abbreviated_helpers_are_not_rust_commands() {
         "dnetinspect",
     ] {
         assert!(Cli::try_parse_from(["dstack", old]).is_err(), "{old}");
+    }
+}
+
+#[test]
+fn image_volume_and_network_namespaces_parse_only_approved_operations() {
+    let Some(Command::Image(image)) = Cli::try_parse_from([
+        "dstack",
+        "image",
+        "list",
+        "-a",
+        "-f",
+        "reference=nginx*",
+        "--filter",
+        "dangling=false",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("image list should parse");
+    };
+    let ImageCommand::List(arguments) = image.command;
+    assert!(arguments.all);
+    assert_eq!(arguments.filters, ["reference=nginx*", "dangling=false"]);
+
+    let Some(Command::Volume(volume)) =
+        Cli::try_parse_from(["dstack", "volume", "inspect", "app_data", "cache"])
+            .unwrap()
+            .command
+    else {
+        panic!("volume inspect should parse");
+    };
+    let VolumeCommand::Inspect(arguments) = volume.command else {
+        panic!("volume inspect should parse");
+    };
+    assert_eq!(
+        arguments.names,
+        ["app_data", "cache"].map(std::ffi::OsString::from)
+    );
+
+    let Some(Command::Network(network)) =
+        Cli::try_parse_from(["dstack", "network", "list", "--filter", "driver=bridge"])
+            .unwrap()
+            .command
+    else {
+        panic!("network list should parse");
+    };
+    let NetworkCommand::List(arguments) = network.command else {
+        panic!("network list should parse");
+    };
+    assert_eq!(arguments.filters, ["driver=bridge"]);
+
+    for argv in [
+        vec!["dstack", "volume", "inspect"],
+        vec!["dstack", "volume", "remove"],
+        vec!["dstack", "network", "inspect"],
+        vec!["dstack", "image", "remove", "nginx"],
+        vec!["dstack", "volume", "prune"],
+        vec!["dstack", "network", "prune"],
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err());
     }
 }

@@ -34,12 +34,25 @@ dstack [-s NAME] [--file FILE]... services
 dstack [-s NAME] [--file FILE]... logs [-f|--follow] [--tail N] [SERVICE...]
 dstack [-s NAME] [--file FILE]... exec SERVICE [-- COMMAND...]
 dstack [-s NAME] [--file FILE]... run SERVICE [-- COMMAND...]
+dstack container list [-a|--all] [-f|--filter FILTER]...
+dstack container ports [CONTAINER [PRIVATE_PORT]]
+dstack container ip CONTAINER
+dstack container stats [-a|--all] [--no-stream] [CONTAINER...]
+dstack container inspect CONTAINER...
+dstack image list [-a|--all] [-f|--filter FILTER]...
+dstack volume list [-f|--filter FILTER]...
+dstack volume inspect NAME...
+dstack volume remove NAME...
+dstack network list [-f|--filter FILTER]...
+dstack network inspect NAME...
 ```
 
-The first non-help operation creates `~/.config/dstack/dstack.conf` and a
-versioned empty `registry.toml` when absent. Set `DSTACK_CONFIG_DIR` to a
-temporary directory for development and tests; it replaces that root
-completely. These v2 commands are not yet a released user interface.
+The first stack, configuration, registry, or migration operation creates
+`~/.config/dstack/dstack.conf` and a versioned empty `registry.toml` when
+absent. Host-scoped Docker utilities do not read or initialize DStack state.
+Set `DSTACK_CONFIG_DIR` to a temporary directory for development and tests; it
+replaces that root completely. These v2 commands are not yet a released user
+interface.
 V2 table output aligns by visible text width and uses restrained color only on
 an interactive terminal; redirected output is plain, and `NO_COLOR` disables
 optional styling.
@@ -65,6 +78,38 @@ boundary form `dstack exec SERVICE -- COMMAND...`. Likewise,
 `dstack run SERVICE -- COMMAND...` supplies exact command argv. Typed `run`
 always uses `--rm`. These operations inherit terminal streams; DStack never
 joins, quotes, or evaluates command arguments through a host shell.
+
+The `container`, `image`, `volume`, and `network` namespaces are host-scoped.
+They call the installed `docker` CLI directly and never resolve a DStack
+project, registry entry, Compose file, or `ResolvedContext`. Consequently,
+`--stack` and `--file` are errors for every command in these namespaces.
+Metadata list operations request machine-oriented Docker rows, validate them,
+and render aligned DStack tables. Docker stderr remains inherited. Live stats,
+inspect JSON, one-container port lookup, and explicit volume removal remain
+Docker-owned streaming output. No v2 host command invokes a shell pipeline,
+pager, or external table utility.
+
+Phase 6 migrates the useful v1 host helpers to descriptive v2 commands:
+
+| DStack v1 | DStack v2 development command |
+|---|---|
+| `dps` | `dstack container list` |
+| `dpsa` | `dstack container list --all` |
+| `dpsg foo` | `dstack container list --filter name=foo` |
+| `dport` | `dstack container ports` |
+| `dip CONTAINER` | `dstack container ip CONTAINER` |
+| `dstats` | `dstack container stats` |
+| `dinspect CONTAINER` | `dstack container inspect CONTAINER` |
+| `dimg` | `dstack image list` |
+| `dvol` | `dstack volume list` |
+| `dvolrm NAME` | `dstack volume remove NAME` |
+| `dvolinspect NAME` | `dstack volume inspect NAME` |
+| `dnet` | `dstack network list` |
+| `dnetinspect NAME` | `dstack network inspect NAME` |
+
+The abbreviated v1 names are not Rust command aliases. Host-wide prune,
+stop-all, and purge helpers remain deferred; Phase 6 only permits targeted
+`volume remove NAME...` mutation.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

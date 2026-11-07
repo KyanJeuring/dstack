@@ -114,9 +114,10 @@ fn host_scoped_stack_and_file_options_fail_before_bootstrap_or_execution() {
     let paths = paths(&temp);
     for argv in [
         vec!["dstack", "-s", "foo", "container", "list"],
-        vec!["dstack", "--stack", "foo", "container", "list"],
+        vec!["dstack", "--stack", "foo", "image", "list"],
         vec!["dstack", "container", "list", "-s", "foo"],
-        vec!["dstack", "container", "list", "--file", "compose.yaml"],
+        vec!["dstack", "volume", "list", "--file", "compose.yaml"],
+        vec!["dstack", "network", "list", "--stack", "foo"],
     ] {
         let executor = RecordingExecutor::default();
         let error = run(&argv, &paths, temp.path(), &executor, &mut Vec::new()).unwrap_err();
@@ -125,6 +126,45 @@ fn host_scoped_stack_and_file_options_fail_before_bootstrap_or_execution() {
         assert!(error.to_string().contains("--stack or --file"));
         assert!(executor.requests().is_empty());
         assert!(executor.capture_requests().is_empty());
+        assert!(!paths.application_dir().exists());
+    }
+}
+
+#[test]
+fn all_host_namespaces_route_directly_without_compose_or_bootstrap() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    for (argv, prefix, captured) in [
+        (vec!["dstack", "image", "list"], vec!["image", "ls"], true),
+        (vec!["dstack", "volume", "list"], vec!["volume", "ls"], true),
+        (
+            vec!["dstack", "network", "list"],
+            vec!["network", "ls"],
+            true,
+        ),
+        (
+            vec!["dstack", "volume", "remove", "app_data", "cache"],
+            vec!["volume", "rm"],
+            false,
+        ),
+        (
+            vec!["dstack", "network", "inspect", "bridge"],
+            vec!["network", "inspect"],
+            false,
+        ),
+    ] {
+        let executor = RecordingExecutor::default();
+        run(&argv, &paths, temp.path(), &executor, &mut Vec::new()).unwrap();
+        let args = if captured {
+            &executor.capture_requests()[0].process.args
+        } else {
+            &executor.requests()[0].args
+        };
+        assert_eq!(
+            &args[..2],
+            prefix.into_iter().map(OsString::from).collect::<Vec<_>>()
+        );
+        assert!(!args.contains(&OsString::from("compose")));
         assert!(!paths.application_dir().exists());
     }
 }
