@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::CommandFactory;
 
-use super::{Cli, Command, ContextCommand, MigrationCommand, RegistryCommand};
+use super::{Cli, Command, ContainerCommand, ContextCommand, MigrationCommand, RegistryCommand};
 
 #[test]
 fn parses_bare_invocation_for_application_diagnostic() {
@@ -377,4 +377,139 @@ fn generated_version_uses_package_metadata() {
         Cli::command().get_version(),
         Some(env!("CARGO_PKG_VERSION"))
     );
+}
+
+#[test]
+fn container_namespace_parses_short_and_long_list_options_in_order() {
+    for argv in [
+        vec![
+            "dstack",
+            "container",
+            "list",
+            "--all",
+            "--filter",
+            "name=nginx",
+            "--filter",
+            "label=hello world",
+        ],
+        vec![
+            "dstack",
+            "container",
+            "list",
+            "-a",
+            "-f",
+            "name=nginx",
+            "-f",
+            "label=hello world",
+        ],
+    ] {
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let Some(Command::Container(container)) = cli.command else {
+            panic!("container command should parse");
+        };
+        let ContainerCommand::List(arguments) = container.command else {
+            panic!("container list should parse");
+        };
+        assert!(arguments.all);
+        assert_eq!(arguments.filters, ["name=nginx", "label=hello world"]);
+    }
+
+    assert!(Cli::try_parse_from(["dstack", "container", "list", "--filter", ""]).is_err());
+}
+
+#[test]
+fn container_ports_ip_stats_and_inspect_are_typed() {
+    for (argv, container, private_port) in [
+        (vec!["dstack", "container", "ports"], None, None),
+        (
+            vec!["dstack", "container", "ports", "nginx"],
+            Some("nginx"),
+            None,
+        ),
+        (
+            vec!["dstack", "container", "ports", "nginx", "8080/tcp"],
+            Some("nginx"),
+            Some("8080/tcp"),
+        ),
+    ] {
+        let Some(Command::Container(container_command)) =
+            Cli::try_parse_from(argv).unwrap().command
+        else {
+            panic!("container command should parse");
+        };
+        let ContainerCommand::Ports(arguments) = container_command.command else {
+            panic!("ports command should parse");
+        };
+        assert_eq!(
+            arguments.container.as_deref(),
+            container.map(std::ffi::OsStr::new)
+        );
+        assert_eq!(
+            arguments.private_port.as_deref(),
+            private_port.map(std::ffi::OsStr::new)
+        );
+    }
+
+    let Some(Command::Container(container)) = Cli::try_parse_from([
+        "dstack",
+        "container",
+        "stats",
+        "--all",
+        "--no-stream",
+        "nginx",
+        "postgres",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("container stats should parse");
+    };
+    let ContainerCommand::Stats(arguments) = container.command else {
+        panic!("container stats should parse");
+    };
+    assert!(arguments.all);
+    assert!(arguments.no_stream);
+    assert_eq!(
+        arguments.containers,
+        ["nginx", "postgres"].map(std::ffi::OsString::from)
+    );
+
+    assert!(Cli::try_parse_from(["dstack", "container", "ip"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "container", "inspect"]).is_err());
+}
+
+#[test]
+fn host_stack_options_after_the_namespace_are_normalized_for_clear_rejection() {
+    let cli = Cli::try_parse_from(["dstack", "container", "list", "--stack", "jellyfin"]).unwrap();
+    assert_eq!(cli.stack.as_deref(), Some("jellyfin"));
+    assert!(matches!(cli.command, Some(Command::Container(_))));
+
+    let cli =
+        Cli::try_parse_from(["dstack", "container", "list", "--file", "compose.yaml"]).unwrap();
+    assert_eq!(cli.files, [PathBuf::from("compose.yaml")]);
+
+    let cli = Cli::try_parse_from(["dstack", "-s", "container", "up"]).unwrap();
+    assert_eq!(cli.stack.as_deref(), Some("container"));
+    assert!(matches!(cli.command, Some(Command::Up(_))));
+}
+
+#[test]
+fn legacy_abbreviated_helpers_are_not_rust_commands() {
+    for old in [
+        "dps",
+        "dpsa",
+        "dpsg",
+        "dport",
+        "dip",
+        "dstats",
+        "dinspect",
+        "dimg",
+        "dvol",
+        "dvolrm",
+        "dvolinspect",
+        "dnet",
+        "dnetinspect",
+    ] {
+        assert!(Cli::try_parse_from(["dstack", old]).is_err(), "{old}");
+    }
 }

@@ -71,11 +71,11 @@ fn find_compose_command(arguments: &[OsString]) -> Option<usize> {
     None
 }
 
-fn is_owned_pair(argument: &OsStr) -> bool {
+pub(super) fn is_owned_pair(argument: &OsStr) -> bool {
     matches!(argument.to_str(), Some("-s" | "--stack" | "--file"))
 }
 
-fn is_owned_inline(argument: &OsStr) -> bool {
+pub(super) fn is_owned_inline(argument: &OsStr) -> bool {
     argument.to_str().is_some_and(|argument| {
         argument.starts_with("--stack=")
             || argument.starts_with("--file=")

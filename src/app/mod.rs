@@ -1,5 +1,6 @@
 mod bootstrap;
 mod dispatch;
+mod host;
 mod operations;
 mod target;
 
@@ -18,7 +19,7 @@ use crate::{
     error::AppError,
     outcome::AppOutcome,
     output::{ColorPolicy, Output},
-    process::{NativeProcessExecutor, ProcessExecutor},
+    process::{NativeProcessExecutor, ProcessExecutor, ProcessOutputExecutor},
 };
 
 /// Runs the v2 application after CLI parsing.
@@ -69,29 +70,49 @@ pub(crate) fn run_with_environment(
 }
 
 #[cfg(test)]
-pub(crate) fn run_with_executor(
+pub(crate) fn run_with_executor<E>(
     cli: Cli,
     paths: &AppPaths,
     current_dir: &Path,
-    executor: &dyn ProcessExecutor,
+    executor: &E,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<AppOutcome, AppError> {
+) -> Result<AppOutcome, AppError>
+where
+    E: ProcessExecutor + ProcessOutputExecutor,
+{
     let mut stdout = Output::plain(stdout);
     let mut stderr = Output::plain(stderr);
     run_with_outputs(cli, paths, current_dir, executor, &mut stdout, &mut stderr)
 }
 
-fn run_with_outputs(
+fn run_with_outputs<E>(
     cli: Cli,
     paths: &AppPaths,
     current_dir: &Path,
-    executor: &dyn ProcessExecutor,
+    executor: &E,
     stdout: &mut Output<'_>,
     stderr: &mut Output<'_>,
-) -> Result<AppOutcome, AppError> {
+) -> Result<AppOutcome, AppError>
+where
+    E: ProcessExecutor + ProcessOutputExecutor,
+{
     if cli.command.is_none() {
         return Err(AppError::NoCommand);
+    }
+    dispatch::validate_global_options(
+        cli.command.as_ref().expect("command checked above"),
+        cli.stack.as_deref(),
+        &cli.files,
+    )?;
+    if host::is_host_scoped(cli.command.as_ref().expect("command checked above")) {
+        return host::run(
+            cli.command.expect("command checked above"),
+            current_dir,
+            executor,
+            executor,
+            stdout,
+        );
     }
     let runtime = bootstrap::run(paths, stderr)?;
     dispatch::run(cli, paths, current_dir, &runtime, executor, stdout, stderr)
@@ -102,3 +123,6 @@ mod tests;
 
 #[cfg(test)]
 mod phase5_tests;
+
+#[cfg(test)]
+mod phase6_tests;

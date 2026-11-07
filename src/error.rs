@@ -2,8 +2,8 @@ use std::{ffi::OsString, fmt, io, process::ExitCode};
 
 use crate::{
     compose::ComposeError, config::ConfigError, discovery::DiscoveryError,
-    migration::MigrationError, process::ProcessError, registry::RegistryError,
-    resolution::ResolutionError,
+    docker::DockerOutputError, migration::MigrationError, process::ProcessError,
+    registry::RegistryError, resolution::ResolutionError,
 };
 
 #[derive(Debug)]
@@ -17,6 +17,7 @@ pub enum AppError {
     Resolution(ResolutionError),
     Compose(ComposeError),
     Process(ProcessError),
+    DockerOutput(DockerOutputError),
     InteractiveShellUnavailable { service: OsString, tried: String },
     MigrationIncomplete { skipped: usize, conflicts: usize },
     Output(io::Error),
@@ -33,6 +34,7 @@ impl AppError {
             | Self::Resolution(_)
             | Self::Compose(_)
             | Self::Process(_)
+            | Self::DockerOutput(_)
             | Self::InteractiveShellUnavailable { .. }
             | Self::MigrationIncomplete { .. }
             | Self::Output(_) => ExitCode::FAILURE,
@@ -53,6 +55,7 @@ impl fmt::Display for AppError {
             Self::Resolution(error) => error.fmt(formatter),
             Self::Compose(error) => error.fmt(formatter),
             Self::Process(error) => error.fmt(formatter),
+            Self::DockerOutput(error) => error.fmt(formatter),
             Self::InteractiveShellUnavailable { service, tried } => write!(
                 formatter,
                 "could not open an interactive shell for service '{}'; tried {tried}. Ensure the service is running and contains a supported shell.",
@@ -79,6 +82,7 @@ impl std::error::Error for AppError {
             Self::Resolution(error) => Some(error),
             Self::Compose(error) => Some(error),
             Self::Process(error) => Some(error),
+            Self::DockerOutput(error) => Some(error),
             Self::Output(error) => Some(error),
             Self::NoCommand
             | Self::InvalidOptions(_)
@@ -127,6 +131,12 @@ impl From<ComposeError> for AppError {
 impl From<ProcessError> for AppError {
     fn from(error: ProcessError) -> Self {
         Self::Process(error)
+    }
+}
+
+impl From<DockerOutputError> for AppError {
+    fn from(error: DockerOutputError) -> Self {
+        Self::DockerOutput(error)
     }
 }
 

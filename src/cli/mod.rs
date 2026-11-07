@@ -1,5 +1,6 @@
 mod compose;
 mod config;
+mod container;
 mod context;
 mod inspect;
 mod lifecycle;
@@ -13,6 +14,10 @@ use clap::{Parser, Subcommand};
 
 pub use compose::ComposeArgs;
 pub use config::{ConfigArgs, ConfigCommand};
+pub use container::{
+    ContainerArgs, ContainerCommand, ContainerInspectArgs, ContainerIpArgs, ContainerListArgs,
+    ContainerPortsArgs, ContainerStatsArgs,
+};
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
 pub use inspect::{LogsArgs, ServicesCommandArgs};
 pub use lifecycle::{DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs};
@@ -46,6 +51,8 @@ pub enum Command {
     List,
     /// Run raw Docker Compose arguments against the resolved stack.
     Compose(ComposeArgs),
+    /// Inspect host-scoped Docker containers without resolving a stack.
+    Container(ContainerArgs),
     /// Create and start services in detached, build-aware mode.
     Up(UpArgs),
     /// Start existing service containers.
@@ -84,7 +91,7 @@ pub enum Command {
 
 impl Cli {
     pub fn parse() -> Self {
-        <Self as Parser>::parse_from(compose::normalize_invocation(std::env::args_os()))
+        <Self as Parser>::parse_from(normalize_invocation(std::env::args_os()))
     }
 
     pub fn try_parse_from<I, T>(arguments: I) -> Result<Self, clap::Error>
@@ -92,8 +99,64 @@ impl Cli {
         I: IntoIterator<Item = T>,
         T: Into<OsString>,
     {
-        <Self as Parser>::try_parse_from(compose::normalize_invocation(arguments))
+        <Self as Parser>::try_parse_from(normalize_invocation(arguments))
     }
+}
+
+fn normalize_invocation<I, T>(arguments: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    normalize_host_options(compose::normalize_invocation(arguments))
+}
+
+fn normalize_host_options(arguments: Vec<OsString>) -> Vec<OsString> {
+    let Some(command_index) = find_host_command(&arguments) else {
+        return arguments;
+    };
+
+    let mut root = arguments[..command_index].to_vec();
+    let mut command = vec![arguments[command_index].clone()];
+    let mut index = command_index + 1;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        if compose::is_owned_pair(argument) {
+            root.push(argument.clone());
+            index += 1;
+            if let Some(value) = arguments.get(index) {
+                root.push(value.clone());
+            }
+        } else if compose::is_owned_inline(argument) {
+            root.push(argument.clone());
+        } else {
+            command.push(argument.clone());
+        }
+        index += 1;
+    }
+    root.extend(command);
+    root
+}
+
+fn find_host_command(arguments: &[OsString]) -> Option<usize> {
+    let mut index = 1;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        if matches!(
+            argument.to_str(),
+            Some("container" | "image" | "volume" | "network")
+        ) {
+            return Some(index);
+        }
+        if compose::is_owned_pair(argument) {
+            index += 2;
+        } else if compose::is_owned_inline(argument) {
+            index += 1;
+        } else {
+            return None;
+        }
+    }
+    None
 }
 
 #[cfg(test)]

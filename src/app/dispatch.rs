@@ -98,7 +98,8 @@ pub(crate) fn run(
             )
             .map(|()| AppOutcome::Success),
         },
-        Command::Compose(_)
+        Command::Container(_)
+        | Command::Compose(_)
         | Command::Up(_)
         | Command::Start(_)
         | Command::Stop(_)
@@ -137,11 +138,17 @@ fn run_operation(
     )
 }
 
-fn validate_global_options(
+pub(super) fn validate_global_options(
     command: &Command,
     stack: Option<&str>,
     files: &[PathBuf],
 ) -> Result<(), AppError> {
+    if matches!(command, Command::Container(_)) && (stack.is_some() || !files.is_empty()) {
+        return Err(AppError::InvalidOptions(
+            "container/image/volume/network commands are host-scoped and do not accept --stack or --file"
+                .to_owned(),
+        ));
+    }
     let supports_stack = matches!(
         command,
         Command::Context(_)
