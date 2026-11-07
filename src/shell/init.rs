@@ -5,14 +5,14 @@ const BASH: &str = r#"dstack() {
   if [[ "$#" -gt 0 && ( "$1" == "use" || "$1" == "unset" ) ]]; then
     for __dstack_arg in "$@"; do
       if [[ "$__dstack_arg" == "--help" || "$__dstack_arg" == "-h" ]]; then
-        command dstack "$@"
+        DSTACK_SHELL_ADAPTER=bash command dstack "$@"
         return $?
       fi
     done
     if [[ "$1" == "use" ]]; then
-      __dstack_mutation="$(command dstack shell __activate bash "${@:2}")"
+      __dstack_mutation="$(DSTACK_SHELL_ADAPTER=bash command dstack shell __activate bash "${@:2}")"
     else
-      __dstack_mutation="$(command dstack shell __clear bash "${@:2}")"
+      __dstack_mutation="$(DSTACK_SHELL_ADAPTER=bash command dstack shell __clear bash "${@:2}")"
     fi
     __dstack_status=$?
     if [[ "$__dstack_status" -ne 0 ]]; then
@@ -21,7 +21,7 @@ const BASH: &str = r#"dstack() {
     eval "$__dstack_mutation"
     return $?
   fi
-  command dstack "$@"
+  DSTACK_SHELL_ADAPTER=bash command dstack "$@"
 }"#;
 
 const ZSH: &str = r#"dstack() {
@@ -29,16 +29,16 @@ const ZSH: &str = r#"dstack() {
   if (( $# > 0 )) && [[ "$1" == "use" || "$1" == "unset" ]]; then
     for __dstack_arg in "$@"; do
       if [[ "$__dstack_arg" == "--help" || "$__dstack_arg" == "-h" ]]; then
-        command dstack "$@"
+        DSTACK_SHELL_ADAPTER=zsh command dstack "$@"
         return $?
       fi
     done
     if [[ "$1" == "use" ]]; then
       shift
-      __dstack_mutation="$(command dstack shell __activate zsh "$@")"
+      __dstack_mutation="$(DSTACK_SHELL_ADAPTER=zsh command dstack shell __activate zsh "$@")"
     else
       shift
-      __dstack_mutation="$(command dstack shell __clear zsh "$@")"
+      __dstack_mutation="$(DSTACK_SHELL_ADAPTER=zsh command dstack shell __clear zsh "$@")"
     fi
     __dstack_status=$?
     if (( __dstack_status != 0 )); then
@@ -47,10 +47,11 @@ const ZSH: &str = r#"dstack() {
     eval "$__dstack_mutation"
     return $?
   fi
-  command dstack "$@"
+  DSTACK_SHELL_ADAPTER=zsh command dstack "$@"
 }"#;
 
 const FISH: &str = r#"function dstack
+  set -lx DSTACK_SHELL_ADAPTER fish
   if test (count $argv) -gt 0
     if test "$argv[1]" = use; or test "$argv[1]" = unset
       if contains -- -h $argv; or contains -- --help $argv
@@ -81,34 +82,45 @@ function global:dstack {
     [object[]] $DStackArguments
   )
 
-  if ($DStackArguments.Count -gt 0) {
-    $commandName = [string] $DStackArguments[0]
-    $hasHelp = ($DStackArguments -contains '--help') -or ($DStackArguments -contains '-h')
-    if (($commandName -eq 'use' -or $commandName -eq 'unset') -and -not $hasHelp) {
-      if ($DStackArguments.Count -gt 1) {
-        $remaining = @($DStackArguments[1..($DStackArguments.Count - 1)])
-      } else {
-        $remaining = @()
+  $hadAdapterHint = Test-Path Env:DSTACK_SHELL_ADAPTER
+  $previousAdapterHint = $env:DSTACK_SHELL_ADAPTER
+  $env:DSTACK_SHELL_ADAPTER = 'powershell'
+  $nativeStatus = 0
+  try {
+    $handledMutation = $false
+    if ($DStackArguments.Count -gt 0) {
+      $commandName = [string] $DStackArguments[0]
+      $hasHelp = ($DStackArguments -contains '--help') -or ($DStackArguments -contains '-h')
+      if (($commandName -eq 'use' -or $commandName -eq 'unset') -and -not $hasHelp) {
+        $handledMutation = $true
+        if ($DStackArguments.Count -gt 1) {
+          $remaining = @($DStackArguments[1..($DStackArguments.Count - 1)])
+        } else {
+          $remaining = @()
+        }
+        if ($commandName -eq 'use') {
+          $mutationArguments = @('shell', '__activate', 'powershell') + $remaining
+        } else {
+          $mutationArguments = @('shell', '__clear', 'powershell') + $remaining
+        }
+        $mutation = @(& $global:__DStackExecutable @mutationArguments)
+        $nativeStatus = $LASTEXITCODE
+        if ($nativeStatus -eq 0) {
+          Invoke-Expression ($mutation -join "`n")
+        }
       }
-      if ($commandName -eq 'use') {
-        $mutationArguments = @('shell', '__activate', 'powershell') + $remaining
-      } else {
-        $mutationArguments = @('shell', '__clear', 'powershell') + $remaining
-      }
-      $mutation = @(& $global:__DStackExecutable @mutationArguments)
+    }
+    if (-not $handledMutation) {
+      & $global:__DStackExecutable @DStackArguments
       $nativeStatus = $LASTEXITCODE
-      $global:LASTEXITCODE = $nativeStatus
-      if ($nativeStatus -ne 0) {
-        return
-      }
-      Invoke-Expression ($mutation -join "`n")
-      $global:LASTEXITCODE = 0
-      return
+    }
+  } finally {
+    if ($hadAdapterHint) {
+      $env:DSTACK_SHELL_ADAPTER = $previousAdapterHint
+    } else {
+      Remove-Item Env:DSTACK_SHELL_ADAPTER -ErrorAction SilentlyContinue
     }
   }
-
-  & $global:__DStackExecutable @DStackArguments
-  $nativeStatus = $LASTEXITCODE
   $global:LASTEXITCODE = $nativeStatus
 }"#;
 

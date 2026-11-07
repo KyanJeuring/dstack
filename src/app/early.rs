@@ -6,7 +6,10 @@ use crate::{
     error::AppError,
     outcome::AppOutcome,
     output::{Output, TextStyle},
-    shell::{ShellMutation, init_script, render_mutation},
+    shell::{
+        ManagementEnvironment, ShellMutation, init_script, integration_guidance, render_mutation,
+        run_install, run_status, run_uninstall,
+    },
 };
 
 pub(super) fn run(
@@ -16,8 +19,14 @@ pub(super) fn run(
 ) -> Result<Option<AppOutcome>, AppError> {
     let command = cli.command.as_ref().ok_or(AppError::NoCommand)?;
     match command {
-        Command::Use(_) => Err(AppError::ShellIntegrationRequired("use")),
-        Command::Unset => Err(AppError::ShellIntegrationRequired("unset")),
+        Command::Use(_) => Err(AppError::ShellIntegrationRequired {
+            command: "use",
+            guidance: integration_guidance(&ManagementEnvironment::from_process()),
+        }),
+        Command::Unset => Err(AppError::ShellIntegrationRequired {
+            command: "unset",
+            guidance: integration_guidance(&ManagementEnvironment::from_process()),
+        }),
         Command::Shell(arguments) => {
             if cli.stack.is_some() || !cli.files.is_empty() {
                 return Err(AppError::InvalidOptions(
@@ -26,15 +35,27 @@ pub(super) fn run(
                 ));
             }
             match &arguments.command {
-                ShellCommand::Init { .. } => {
-                    writeln!(stdout, "{}", init_script(arguments.command.shell()))?;
+                ShellCommand::Install(arguments) => {
+                    run_install(arguments, &ManagementEnvironment::from_process(), stdout)?;
                     Ok(Some(AppOutcome::Success))
                 }
-                ShellCommand::Clear { .. } => {
+                ShellCommand::Status(arguments) => {
+                    run_status(arguments, &ManagementEnvironment::from_process(), stdout)?;
+                    Ok(Some(AppOutcome::Success))
+                }
+                ShellCommand::Uninstall(arguments) => {
+                    run_uninstall(arguments, &ManagementEnvironment::from_process(), stdout)?;
+                    Ok(Some(AppOutcome::Success))
+                }
+                ShellCommand::Init { shell } => {
+                    writeln!(stdout, "{}", init_script(*shell))?;
+                    Ok(Some(AppOutcome::Success))
+                }
+                ShellCommand::Clear { shell } => {
                     writeln!(
                         stdout,
                         "{}",
-                        render_mutation(arguments.command.shell(), ShellMutation::UnsetSession,)
+                        render_mutation(*shell, ShellMutation::UnsetSession,)
                     )?;
                     stderr.write_styled(TextStyle::Success, "[OK]")?;
                     writeln!(stderr, " DStack terminal context cleared")?;

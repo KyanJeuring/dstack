@@ -176,11 +176,13 @@ dependencies = [
  "atomic-write-file",
  "clap",
  "dirs",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",
  "toml",
  "unicode-width",
+ "windows-sys",
 ]
 
 [[package]]

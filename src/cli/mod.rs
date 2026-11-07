@@ -33,7 +33,7 @@ pub use network::{NetworkArgs, NetworkCommand, NetworkInspectArgs, NetworkListAr
 pub use registry::{RegistryArgs, RegistryCommand};
 pub use service_command::{ExecArgs, RunArgs};
 pub use session::UseArgs;
-pub use shell::{ShellActivateArgs, ShellArgs, ShellCommand};
+pub use shell::{ShellActivateArgs, ShellArgs, ShellCommand, ShellManageArgs, ShellStatusArgs};
 pub use volume::{VolumeArgs, VolumeCommand, VolumeListArgs, VolumeNamesArgs};
 
 #[derive(Debug, Parser)]
@@ -108,7 +108,7 @@ pub enum Command {
     Use(UseArgs),
     /// Clear the active stack from this terminal (requires shell integration).
     Unset,
-    /// Generate and support shell integration.
+    /// Install, inspect, or remove terminal shell integration.
     Shell(ShellArgs),
 }
 

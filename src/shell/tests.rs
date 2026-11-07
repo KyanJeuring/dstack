@@ -82,23 +82,26 @@ fn generated_bash_adapter_is_valid_syntax() {
 fn adapters_are_native_thin_idempotent_function_definitions() {
     let bash = init_script(ShellKind::Bash);
     assert!(bash.starts_with("dstack()"));
-    assert!(bash.contains("command dstack shell __activate bash"));
-    assert!(bash.contains("command dstack \"$@\""));
+    assert!(bash.contains("DSTACK_SHELL_ADAPTER=bash command dstack shell __activate bash"));
+    assert!(bash.contains("DSTACK_SHELL_ADAPTER=bash command dstack \"$@\""));
     assert!(bash.contains("--help"));
 
     let zsh = init_script(ShellKind::Zsh);
     assert!(zsh.starts_with("dstack()"));
-    assert!(zsh.contains("command dstack shell __activate zsh"));
+    assert!(zsh.contains("DSTACK_SHELL_ADAPTER=zsh command dstack shell __activate zsh"));
 
     let fish = init_script(ShellKind::Fish);
     assert!(fish.starts_with("function dstack"));
     assert!(fish.contains("command dstack shell __activate fish"));
+    assert!(fish.contains("set -lx DSTACK_SHELL_ADAPTER fish"));
     assert!(!fish.contains("export DSTACK_SESSION"));
 
     let powershell = init_script(ShellKind::Powershell);
     assert!(powershell.contains("Get-Command dstack -CommandType Application"));
     assert!(powershell.contains("function global:dstack"));
     assert!(powershell.contains("& $global:__DStackExecutable"));
+    assert!(powershell.contains("$env:DSTACK_SHELL_ADAPTER = 'powershell'"));
+    assert!(powershell.contains("Remove-Item Env:DSTACK_SHELL_ADAPTER"));
     assert!(!powershell.contains("bash"));
     assert!(!powershell.contains("cmd /C"));
 }

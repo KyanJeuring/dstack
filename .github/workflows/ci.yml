@@ -235,7 +235,7 @@ jobs:
             throw "Native redirected output contains an ANSI escape sequence"
           }
 
-      - name: Smoke PowerShell session adapter (Windows)
+      - name: Smoke PowerShell shell installation and session adapter (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -252,8 +252,27 @@ jobs:
             throw "Could not prepare PowerShell adapter smoke profile"
           }
 
-          Invoke-Expression ((& dstack shell init powershell) -join "`n")
-          Invoke-Expression ((& $global:__DStackExecutable shell init powershell) -join "`n")
+          $dryRunProfile = Join-Path $env:RUNNER_TEMP "dstack auto-detect profile.ps1"
+          $dryRun = @(& dstack shell install --profile $dryRunProfile --dry-run)
+          if ($LASTEXITCODE -ne 0 -or ($dryRun -join "`n") -notmatch "Detected shell: PowerShell") {
+            throw "PowerShell automatic detection dry-run failed"
+          }
+          if (Test-Path -LiteralPath $dryRunProfile) {
+            throw "PowerShell dry-run created its profile"
+          }
+
+          $profile = Join-Path $env:RUNNER_TEMP "dstack profile's `$value; & λ.ps1"
+          & dstack shell install --shell powershell --profile $profile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $profile)) {
+            throw "Could not install PowerShell integration profile"
+          }
+          $profileText = Get-Content -Raw -LiteralPath $profile
+          if (($profileText | Select-String -AllMatches "# >>> DStack shell integration >>>").Matches.Count -ne 1) {
+            throw "PowerShell integration profile does not contain exactly one managed block"
+          }
+
+          . $profile
+          . $profile
           dstack use $stackName
           if ($LASTEXITCODE -ne 0 -or -not $env:DSTACK_SESSION) {
             throw "PowerShell adapter did not activate DSTACK_SESSION"
@@ -268,7 +287,23 @@ jobs:
             throw "PowerShell adapter did not pass use help through safely"
           }
 
+          $status = @(dstack shell status --shell powershell --profile $profile) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or $status -notmatch "Profile integration: installed" -or $status -notmatch "Current terminal adapter: active") {
+            throw "PowerShell shell status did not report installed and active"
+          }
+          if (Test-Path Env:DSTACK_SHELL_ADAPTER) {
+            throw "PowerShell adapter leaked its private child-process hint"
+          }
+
           dstack unset
           if ($LASTEXITCODE -ne 0 -or (Test-Path Env:DSTACK_SESSION)) {
             throw "PowerShell adapter did not clear DSTACK_SESSION"
+          }
+
+          dstack shell uninstall --shell powershell --profile $profile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $profile)) {
+            throw "PowerShell integration uninstall failed or deleted the profile"
+          }
+          if ((Get-Content -Raw -LiteralPath $profile) -match "DStack shell integration") {
+            throw "PowerShell integration uninstall left its managed block behind"
           }

@@ -124,7 +124,11 @@ pub(crate) fn run(
                 stderr,
             )
             .map(|()| AppOutcome::Success),
-            ShellCommand::Init { .. } | ShellCommand::Clear { .. } => {
+            ShellCommand::Install(_)
+            | ShellCommand::Status(_)
+            | ShellCommand::Uninstall(_)
+            | ShellCommand::Init { .. }
+            | ShellCommand::Clear { .. } => {
                 unreachable!("early shell command was routed after bootstrap")
             }
         },

@@ -12,7 +12,16 @@ pub struct ShellArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ShellCommand {
-    /// Emit the adapter source for one explicitly selected shell.
+    /// Install DStack integration in a shell profile.
+    Install(ShellManageArgs),
+
+    /// Inspect profile installation and current-adapter state.
+    Status(ShellStatusArgs),
+
+    /// Remove only DStack's managed integration block.
+    Uninstall(ShellManageArgs),
+
+    #[command(name = "__init", hide = true)]
     Init {
         #[arg(value_enum, value_name = "SHELL")]
         shell: ShellKind,
@@ -28,13 +37,30 @@ pub enum ShellCommand {
     },
 }
 
-impl ShellCommand {
-    pub fn shell(&self) -> ShellKind {
-        match self {
-            Self::Init { shell } | Self::Clear { shell } => *shell,
-            Self::Activate(arguments) => arguments.shell,
-        }
-    }
+#[derive(Debug, Args)]
+pub struct ShellManageArgs {
+    /// Override automatic shell detection.
+    #[arg(long, value_enum, value_name = "SHELL")]
+    pub shell: Option<ShellKind>,
+
+    /// Override the shell profile path.
+    #[arg(long, value_name = "PATH")]
+    pub profile: Option<PathBuf>,
+
+    /// Report the planned change without writing the profile.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ShellStatusArgs {
+    /// Override automatic shell detection.
+    #[arg(long, value_enum, value_name = "SHELL")]
+    pub shell: Option<ShellKind>,
+
+    /// Override the shell profile path.
+    #[arg(long, value_name = "PATH")]
+    pub profile: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]

@@ -20,3 +20,14 @@ impl fmt::Display for ShellKind {
         })
     }
 }
+
+impl ShellKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Bash => "Bash",
+            Self::Zsh => "Zsh",
+            Self::Fish => "Fish",
+            Self::Powershell => "PowerShell",
+        }
+    }
+}

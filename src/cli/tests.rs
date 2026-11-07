@@ -602,7 +602,40 @@ fn session_and_shell_commands_have_explicit_typed_grammar() {
         Some(Command::Unset)
     ));
     assert!(matches!(
-        Cli::try_parse_from(["dstack", "shell", "init", "fish"])
+        Cli::try_parse_from([
+            "dstack",
+            "shell",
+            "install",
+            "--shell",
+            "fish",
+            "--profile",
+            "custom profile",
+            "--dry-run"
+        ])
+        .unwrap()
+        .command,
+        Some(Command::Shell(super::ShellArgs {
+            command: ShellCommand::Install(_)
+        }))
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(["dstack", "shell", "status", "--shell", "zsh"])
+            .unwrap()
+            .command,
+        Some(Command::Shell(super::ShellArgs {
+            command: ShellCommand::Status(_)
+        }))
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(["dstack", "shell", "uninstall", "--dry-run"])
+            .unwrap()
+            .command,
+        Some(Command::Shell(super::ShellArgs {
+            command: ShellCommand::Uninstall(_)
+        }))
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(["dstack", "shell", "__init", "fish"])
             .unwrap()
             .command,
         Some(Command::Shell(super::ShellArgs {
@@ -612,7 +645,8 @@ fn session_and_shell_commands_have_explicit_typed_grammar() {
     assert!(Cli::try_parse_from(["dstack", "jellyfin"]).is_err());
     assert!(Cli::try_parse_from(["dstack", "use", "jellyfin", "compose.yaml"]).is_err());
     assert!(Cli::try_parse_from(["dstack", "shell", "init"]).is_err());
-    let unknown = Cli::try_parse_from(["dstack", "shell", "init", "cmd"]).unwrap_err();
+    let unknown =
+        Cli::try_parse_from(["dstack", "shell", "install", "--shell", "cmd"]).unwrap_err();
     let diagnostic = unknown.to_string();
     assert!(diagnostic.contains("bash"));
     assert!(diagnostic.contains("powershell"));
@@ -627,7 +661,10 @@ fn internal_shell_protocol_is_hidden_from_normal_help() {
     let mut help = Vec::new();
     shell.write_long_help(&mut help).unwrap();
     let help = String::from_utf8(help).unwrap();
-    assert!(help.contains("init"));
+    assert!(help.contains("install"));
+    assert!(help.contains("status"));
+    assert!(help.contains("uninstall"));
+    assert!(!help.contains("__init"));
     assert!(!help.contains("__activate"));
     assert!(!help.contains("__clear"));
 }
