@@ -138,6 +138,22 @@ external production installer or implement release migration.
 Phase 7.1 does not add host lifecycle/prune expansion, self-update, production
 installer changes, completion frameworks, or final cutover.
 
+Phase 8.1 completes the targeted host-resource lifecycle surface with explicit
+container, image, and network removal plus image inspection. These commands
+remain context-, session-, registry-, discovery-, Compose-, and configuration-
+independent. Explicit names are sufficient intent: handlers preserve operand
+order, inherit Docker stdio, return Docker status, and never add force, stop,
+disconnect, volume-removal, or prune behavior.
+
+Phase 8.1 also adds one shared Compose state inspector for `start` and `stop`.
+It uses silent captured probes against the already resolved project and file
+selection, retains per-container replica state, and filters Compose one-off
+containers. Probes are best-effort UX optimization only. A failed, malformed,
+incomplete, unknown, or unsupported result must produce no diagnostic and must
+fall back to the unchanged lifecycle invocation; Docker Compose remains the
+authority. Do not copy this shortcut to `up`, `down`, or another lifecycle
+command without separately defining and approving its semantics.
+
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
 developer's real v1 or v2 state. The override contains `dstack.conf` and
@@ -147,8 +163,9 @@ never require a Docker daemon, Docker Desktop, containers, or network pulls.
 Interactive shell probes use null stdio; final Compose and direct Docker
 streaming operations inherit the user's terminal and preserve exact native
 arguments. Captured-process fakes must cover stdout bytes, numeric status,
-spawn errors, and the null-stdin/captured-stdout/inherited-stderr policy. No
-automated test may require a Docker daemon.
+spawn errors, the normal null-stdin/captured-stdout/inherited-stderr policy,
+and the silent null-stdin/captured-stdout/null-stderr probe policy. No automated
+test may require a Docker daemon.
 
 The same developer workflows are available through `make fmt-check`,
 `make lint`, `make test`, `make build`, and `make ci` on Unix-like systems.

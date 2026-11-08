@@ -13,7 +13,8 @@ use crate::{
     context::{ResolvedContext, resolve_context},
     error::AppError,
     outcome::AppOutcome,
-    process::ProcessExecutor,
+    output::Output,
+    process::{ProcessExecutor, ProcessOutputExecutor},
     session::SessionEnvironment,
 };
 
@@ -63,6 +64,7 @@ pub(crate) struct Environment<'a> {
     pub(crate) current_dir: &'a Path,
     pub(crate) runtime: &'a RuntimeState,
     pub(crate) executor: &'a dyn ProcessExecutor,
+    pub(crate) capture_executor: &'a dyn ProcessOutputExecutor,
     pub(crate) session: &'a SessionEnvironment,
 }
 
@@ -71,6 +73,7 @@ pub(crate) fn run(
     root_stack: Option<String>,
     root_files: Vec<PathBuf>,
     environment: Environment<'_>,
+    stderr: &mut Output<'_>,
 ) -> Result<AppOutcome, AppError> {
     match request {
         Request::Raw(arguments) => {
@@ -92,10 +95,24 @@ pub(crate) fn run(
             )
         }
         Request::Start(arguments) => {
-            run_services(arguments, root_stack, root_files, &environment, start::run)
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            start::run(
+                &context,
+                arguments.services,
+                environment.executor,
+                environment.capture_executor,
+                stderr,
+            )
         }
         Request::Stop(arguments) => {
-            run_services(arguments, root_stack, root_files, &environment, stop::run)
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            stop::run(
+                &context,
+                arguments.services,
+                environment.executor,
+                environment.capture_executor,
+                stderr,
+            )
         }
         Request::Restart(arguments) => run_services(
             arguments,

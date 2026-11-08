@@ -12,6 +12,7 @@ use crate::{
     outcome::AppOutcome,
     output::Output,
     process::ProcessExecutor,
+    process::ProcessOutputExecutor,
     registry::commands as registry_commands,
     session::{SessionEnvironment, commands as session_commands},
     stack::commands::list as list_stacks,
@@ -28,6 +29,7 @@ pub(crate) struct Environment<'a> {
     pub(crate) current_dir: &'a Path,
     pub(crate) runtime: &'a RuntimeState,
     pub(crate) executor: &'a dyn ProcessExecutor,
+    pub(crate) capture_executor: &'a dyn ProcessOutputExecutor,
     pub(crate) session: &'a SessionEnvironment,
 }
 
@@ -43,7 +45,7 @@ pub(crate) fn run(
     let root_files = cli.files;
     let command = match Request::from_command(command) {
         Ok(request) => {
-            return run_operation(request, root_stack, root_files, &environment);
+            return run_operation(request, root_stack, root_files, &environment, stderr);
         }
         Err(command) => command,
     };
@@ -161,6 +163,7 @@ fn run_operation(
     root_stack: Option<String>,
     root_files: Vec<PathBuf>,
     environment: &Environment<'_>,
+    stderr: &mut Output<'_>,
 ) -> Result<AppOutcome, AppError> {
     operations::run(
         request,
@@ -171,8 +174,10 @@ fn run_operation(
             current_dir: environment.current_dir,
             runtime: environment.runtime,
             executor: environment.executor,
+            capture_executor: environment.capture_executor,
             session: environment.session,
         },
+        stderr,
     )
 }
 

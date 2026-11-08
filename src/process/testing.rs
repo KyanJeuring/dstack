@@ -150,6 +150,27 @@ mod tests {
     }
 
     #[test]
+    fn silent_capture_policy_is_recorded_without_using_stream_execution() {
+        let executor = RecordingExecutor::default();
+        let spec = CapturedProcessSpec::silent(
+            ProcessSpec::new("docker", PathBuf::from("project")).with_args([
+                "compose",
+                "config",
+                "--services",
+            ]),
+        );
+
+        executor.capture(&spec).unwrap();
+
+        assert_eq!(executor.capture_requests(), [spec]);
+        assert_eq!(
+            executor.capture_requests()[0].policy,
+            CapturePolicy::StdoutWithNullStderr
+        );
+        assert!(executor.requests().is_empty());
+    }
+
+    #[test]
     fn capture_spawn_error_is_distinct_and_does_not_affect_execute_queue() {
         let executor = RecordingExecutor::default();
         executor.push_capture_spawn_error(io::ErrorKind::PermissionDenied, "capture denied");

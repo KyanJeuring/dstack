@@ -5,7 +5,8 @@ use crate::{
     compose::{ComposeSelection, ComposeSelectionSource},
     context::ResolvedContext,
     outcome::AppOutcome,
-    process::{ProcessExecutor, ProcessStatus, testing::RecordingExecutor},
+    output::Output,
+    process::{ProcessExecutor, ProcessOutputExecutor, ProcessStatus, testing::RecordingExecutor},
     resolution::{ResolvedStack, StackSource},
 };
 
@@ -72,28 +73,44 @@ fn up_has_typed_defaults_optional_orphans_and_service_operands() {
     }
 }
 
-type ServiceHandler = fn(
-    &ResolvedContext,
-    Vec<OsString>,
-    &dyn ProcessExecutor,
-) -> Result<AppOutcome, crate::error::AppError>;
-
 #[test]
 fn start_stop_and_restart_append_services_without_changing_the_operation() {
     for (run, operation) in [
-        (start::run as ServiceHandler, "start"),
-        (stop::run as ServiceHandler, "stop"),
-        (restart::run as ServiceHandler, "restart"),
+        (start::run as StatefulServiceHandler, "start"),
+        (stop::run as StatefulServiceHandler, "stop"),
     ] {
         for services in [vec![], vec!["php"], vec!["php", "nginx"]] {
             let executor = RecordingExecutor::default();
-            run(&context(), os(&services), &executor).unwrap();
+            run(
+                &context(),
+                os(&services),
+                &executor,
+                &executor,
+                &mut Output::plain(&mut Vec::new()),
+            )
+            .unwrap();
             let mut expected = vec![operation];
             expected.extend(services);
             assert_requests(&executor, &[expected]);
         }
     }
+
+    for services in [vec![], vec!["php"], vec!["php", "nginx"]] {
+        let executor = RecordingExecutor::default();
+        restart::run(&context(), os(&services), &executor).unwrap();
+        let mut expected = vec!["restart"];
+        expected.extend(services);
+        assert_requests(&executor, &[expected]);
+    }
 }
+
+type StatefulServiceHandler = fn(
+    &ResolvedContext,
+    Vec<OsString>,
+    &dyn ProcessExecutor,
+    &dyn ProcessOutputExecutor,
+    &mut Output<'_>,
+) -> Result<AppOutcome, crate::error::AppError>;
 
 #[test]
 fn down_and_recreate_use_explicit_volume_semantics() {

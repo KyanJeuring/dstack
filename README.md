@@ -44,12 +44,16 @@ dstack container ports [CONTAINER [PRIVATE_PORT]]
 dstack container ip CONTAINER
 dstack container stats [-a|--all] [--no-stream] [CONTAINER...]
 dstack container inspect CONTAINER...
+dstack container remove CONTAINER...
 dstack image list [-a|--all] [-f|--filter FILTER]...
+dstack image inspect IMAGE...
+dstack image remove IMAGE...
 dstack volume list [-f|--filter FILTER]...
 dstack volume inspect NAME...
 dstack volume remove NAME...
 dstack network list [-f|--filter FILTER]...
 dstack network inspect NAME...
+dstack network remove NAME...
 ```
 
 The first stack, configuration, registry, or migration operation creates
@@ -68,6 +72,15 @@ DStack, such as `dstack compose -- --file special.yaml up`. The typed
 `dstack up` command runs `up -d --build`; `update`, `rebuild`, and `recreate`
 are fail-fast multi-step operations. Docker stdin, stdout, and stderr remain
 inherited, and DStack returns Docker's numeric exit status when available.
+
+`dstack start` and `dstack stop` make a best-effort, machine-readable state
+check before running Compose. DStack skips the lifecycle command only when the
+complete requested stack or service set is conclusively already running or
+stopped. The check is replica-aware, ignores unrelated one-off containers, and
+requires existing containers for every explicit service. Missing, mixed,
+unknown, malformed, or failed probe state falls through to the original
+Compose command, which remains authoritative. `up` and all other lifecycle
+commands are unchanged.
 
 `dstack services` lists the services defined by the resolved Compose model by
 running `docker compose ... config --services`; it does not depend on running
@@ -90,9 +103,10 @@ project, registry entry, Compose file, or `ResolvedContext`. Consequently,
 `--stack` and `--file` are errors for every command in these namespaces.
 Metadata list operations request machine-oriented Docker rows, validate them,
 and render aligned DStack tables. Docker stderr remains inherited. Live stats,
-inspect JSON, one-container port lookup, and explicit volume removal remain
-Docker-owned streaming output. No v2 host command invokes a shell pipeline,
-pager, or external table utility.
+inspect JSON, one-container port lookup, and explicit resource removal remain
+Docker-owned streaming output. Explicit removals never add force, stop,
+disconnect, volume-removal, or prune behavior. No v2 host command invokes a
+shell pipeline, pager, or external table utility.
 
 ### V2 terminal sessions and shell integration
 
@@ -227,8 +241,10 @@ Phase 6 migrates the useful v1 host helpers to descriptive v2 commands:
 | `dnetinspect NAME` | `dstack network inspect NAME` |
 
 The abbreviated v1 names are not Rust command aliases. Host-wide prune,
-stop-all, and purge helpers remain deferred; Phase 6 only permits targeted
-`volume remove NAME...` mutation.
+stop-all, and purge helpers remain deferred. Phase 8.1 adds only explicit
+`container remove`, `image inspect`, `image remove`, and `network remove`
+operations alongside the existing targeted volume removal; it does not add a
+generic Docker passthrough or resource creation commands.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

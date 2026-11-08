@@ -11,6 +11,8 @@ pub enum StdioPolicy {
 pub enum CapturePolicy {
     /// Null stdin, captured stdout, and inherited stderr.
     StdoutWithInheritedStderr,
+    /// Null stdin, captured stdout, and discarded stderr for best-effort probes.
+    StdoutWithNullStderr,
 }
 
 /// A process request expressed without shell parsing or quoting.
@@ -55,6 +57,13 @@ impl CapturedProcessSpec {
         Self {
             process,
             policy: CapturePolicy::StdoutWithInheritedStderr,
+        }
+    }
+
+    pub fn silent(process: ProcessSpec) -> Self {
+        Self {
+            process,
+            policy: CapturePolicy::StdoutWithNullStderr,
         }
     }
 }
@@ -134,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn captured_spec_explicitly_records_stdout_capture_and_inherited_stderr() {
+    fn captured_specs_record_inherited_and_silent_stderr_policies() {
         let process = ProcessSpec::new("docker", PathBuf::from("host cwd")).with_args([
             "container",
             "ls",
@@ -145,5 +154,9 @@ mod tests {
 
         assert_eq!(captured.process, process);
         assert_eq!(captured.policy, CapturePolicy::StdoutWithInheritedStderr);
+
+        let silent = CapturedProcessSpec::silent(captured.process.clone());
+        assert_eq!(silent.process, captured.process);
+        assert_eq!(silent.policy, CapturePolicy::StdoutWithNullStderr);
     }
 }

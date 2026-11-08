@@ -55,6 +55,12 @@ impl ProcessOutputExecutor for NativeProcessExecutor {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::inherit());
             }
+            CapturePolicy::StdoutWithNullStderr => {
+                command
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null());
+            }
         }
 
         let child = command.spawn().map_err(|source| ProcessError::Spawn {

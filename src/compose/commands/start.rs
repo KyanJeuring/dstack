@@ -1,7 +1,14 @@
 use std::ffi::OsString;
 
 use crate::{
-    context::ResolvedContext, error::AppError, outcome::AppOutcome, process::ProcessExecutor,
+    compose::state::{
+        ComposeStateInspector, DesiredState, DesiredStateAssessment, write_already_message,
+    },
+    context::ResolvedContext,
+    error::AppError,
+    outcome::AppOutcome,
+    output::Output,
+    process::{ProcessExecutor, ProcessOutputExecutor},
 };
 
 use super::execute;
@@ -9,7 +16,22 @@ use super::execute;
 pub fn run(
     context: &ResolvedContext,
     services: Vec<OsString>,
-    executor: &dyn ProcessExecutor,
+    stream_executor: &dyn ProcessExecutor,
+    capture_executor: &dyn ProcessOutputExecutor,
+    stderr: &mut Output<'_>,
 ) -> Result<AppOutcome, AppError> {
-    execute::once(context, execute::services("start", services), executor)
+    if ComposeStateInspector::new(capture_executor).assess(
+        context,
+        &services,
+        DesiredState::Running,
+    ) == DesiredStateAssessment::AlreadySatisfied
+    {
+        write_already_message(context, &services, DesiredState::Running, stderr)?;
+        return Ok(AppOutcome::Success);
+    }
+    execute::once(
+        context,
+        execute::services("start", services),
+        stream_executor,
+    )
 }

@@ -174,6 +174,7 @@ where
             current_dir,
             runtime: &runtime,
             executor,
+            capture_executor: executor,
             session,
         },
         stdout,
@@ -192,3 +193,6 @@ mod phase6_tests;
 
 #[cfg(test)]
 mod phase7_tests;
+
+#[cfg(test)]
+mod phase8_tests;
