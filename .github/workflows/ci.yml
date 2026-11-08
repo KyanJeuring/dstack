@@ -45,7 +45,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          choco install shellcheck -y
+          for attempt in 1 2 3; do
+            if choco install shellcheck -y; then
+              exit 0
+            fi
+            if ((attempt == 3)); then
+              printf 'ShellCheck installation failed after %s attempts.\n' "$attempt" >&2
+              exit 1
+            fi
+            printf 'ShellCheck installation attempt %s failed; retrying.\n' "$attempt" >&2
+            sleep "$((attempt * 10))"
+          done
 
       # Runtime selection
       - name: Verify Bash 4+ runtime
