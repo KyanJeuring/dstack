@@ -16,6 +16,8 @@ pub enum NetworkCommand {
     List(NetworkListArgs),
     /// Stream Docker's native network inspection JSON.
     Inspect(NetworkInspectArgs),
+    /// Remove only the explicitly named Docker networks.
+    Remove(NetworkRemoveArgs),
 }
 
 #[derive(Debug, Args)]
@@ -34,6 +36,13 @@ pub struct NetworkListArgs {
 
 #[derive(Debug, Args)]
 pub struct NetworkInspectArgs {
+    /// Network names or IDs.
+    #[arg(value_name = "NAME", required = true, num_args = 1..)]
+    pub names: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct NetworkRemoveArgs {
     /// Network names or IDs.
     #[arg(value_name = "NAME", required = true, num_args = 1..)]
     pub names: Vec<OsString>,

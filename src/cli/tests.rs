@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
 
 use clap::CommandFactory;
 
@@ -482,6 +482,72 @@ fn container_ports_ip_stats_and_inspect_are_typed() {
 }
 
 #[test]
+fn targeted_host_lifecycle_commands_require_and_preserve_operands() {
+    for (argv, expected) in [
+        (vec!["dstack", "container", "remove", "one"], vec!["one"]),
+        (
+            vec!["dstack", "container", "remove", "one", "two"],
+            vec!["one", "two"],
+        ),
+    ] {
+        let Some(Command::Container(arguments)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("container command should parse");
+        };
+        let ContainerCommand::Remove(arguments) = arguments.command else {
+            panic!("container remove should parse");
+        };
+        assert_eq!(
+            arguments.containers,
+            expected.into_iter().map(OsString::from).collect::<Vec<_>>()
+        );
+    }
+
+    for (operation, operands) in [
+        ("inspect", vec!["one"]),
+        ("inspect", vec!["one", "two"]),
+        ("remove", vec!["one"]),
+        ("remove", vec!["one", "two"]),
+    ] {
+        let argv = [vec!["dstack", "image", operation], operands.clone()].concat();
+        let Some(Command::Image(arguments)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("image command should parse");
+        };
+        let images = match arguments.command {
+            ImageCommand::Inspect(arguments) => arguments.images,
+            ImageCommand::Remove(arguments) => arguments.images,
+            ImageCommand::List(_) => panic!("targeted image command should parse"),
+        };
+        assert_eq!(
+            images,
+            operands.into_iter().map(OsString::from).collect::<Vec<_>>()
+        );
+    }
+
+    for operands in [vec!["one"], vec!["one", "two"]] {
+        let argv = [vec!["dstack", "network", "remove"], operands.clone()].concat();
+        let Some(Command::Network(arguments)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("network command should parse");
+        };
+        let NetworkCommand::Remove(arguments) = arguments.command else {
+            panic!("network remove should parse");
+        };
+        assert_eq!(
+            arguments.names,
+            operands.into_iter().map(OsString::from).collect::<Vec<_>>()
+        );
+    }
+
+    for argv in [
+        ["dstack", "container", "remove"].as_slice(),
+        ["dstack", "image", "inspect"].as_slice(),
+        ["dstack", "image", "remove"].as_slice(),
+        ["dstack", "network", "remove"].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err());
+    }
+}
+
+#[test]
 fn host_stack_options_after_the_namespace_are_normalized_for_clear_rejection() {
     let cli = Cli::try_parse_from(["dstack", "container", "list", "--stack", "jellyfin"]).unwrap();
     assert_eq!(cli.stack.as_deref(), Some("jellyfin"));
@@ -534,7 +600,9 @@ fn image_volume_and_network_namespaces_parse_only_approved_operations() {
     else {
         panic!("image list should parse");
     };
-    let ImageCommand::List(arguments) = image.command;
+    let ImageCommand::List(arguments) = image.command else {
+        panic!("image list should parse");
+    };
     assert!(arguments.all);
     assert_eq!(arguments.filters, ["reference=nginx*", "dangling=false"]);
 
@@ -569,7 +637,6 @@ fn image_volume_and_network_namespaces_parse_only_approved_operations() {
         vec!["dstack", "volume", "inspect"],
         vec!["dstack", "volume", "remove"],
         vec!["dstack", "network", "inspect"],
-        vec!["dstack", "image", "remove", "nginx"],
         vec!["dstack", "volume", "prune"],
         vec!["dstack", "network", "prune"],
     ] {

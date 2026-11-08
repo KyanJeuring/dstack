@@ -1,6 +1,6 @@
 use std::{ffi::OsString, io, path::PathBuf};
 
-use super::list;
+use super::{inspect, list, remove};
 use crate::{
     AppError, AppOutcome,
     output::Output,
@@ -131,3 +131,60 @@ fn image_list_handles_malformed_nonzero_and_spawn_results_without_panicking() {
         AppError::Process(_)
     ));
 }
+
+#[test]
+fn image_inspect_and_remove_stream_exact_operands_and_status() {
+    for (run, images, expected) in [
+        (
+            inspect::run as Handler,
+            vec!["img1"],
+            vec!["image", "inspect", "img1"],
+        ),
+        (
+            inspect::run as Handler,
+            vec!["img1", "img2"],
+            vec!["image", "inspect", "img1", "img2"],
+        ),
+        (
+            remove::run as Handler,
+            vec!["img1"],
+            vec!["image", "rm", "img1"],
+        ),
+        (
+            remove::run as Handler,
+            vec!["img1", "img2"],
+            vec!["image", "rm", "img1", "img2"],
+        ),
+    ] {
+        let executor = RecordingExecutor::default();
+        executor.push_status(33);
+        assert_eq!(
+            run(os(&images), &cwd(), &executor).unwrap(),
+            AppOutcome::Child(ProcessStatus::from_code(33))
+        );
+        let request = &executor.requests()[0];
+        assert_eq!(request.args, os(&expected));
+        assert_eq!(request.stdio, crate::process::StdioPolicy::Inherit);
+        assert!(!request.args.contains(&OsString::from("--force")));
+        assert!(!request.args.contains(&OsString::from("prune")));
+        assert!(executor.capture_requests().is_empty());
+    }
+}
+
+#[test]
+fn image_inspect_and_remove_keep_spawn_failures_distinct() {
+    for run in [inspect::run as Handler, remove::run as Handler] {
+        let executor = RecordingExecutor::default();
+        executor.push_spawn_error(io::ErrorKind::PermissionDenied, "image denied");
+        assert!(matches!(
+            run(os(&["img"]), &cwd(), &executor).unwrap_err(),
+            AppError::Process(_)
+        ));
+    }
+}
+
+type Handler = fn(
+    Vec<OsString>,
+    &std::path::Path,
+    &dyn crate::process::ProcessExecutor,
+) -> Result<AppOutcome, AppError>;

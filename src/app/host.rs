@@ -59,6 +59,9 @@ pub(super) fn run(
             ContainerCommand::Inspect(arguments) => {
                 container_commands::inspect::run(arguments.containers, current_dir, stream_executor)
             }
+            ContainerCommand::Remove(arguments) => {
+                container_commands::remove::run(arguments.containers, current_dir, stream_executor)
+            }
         },
         Command::Image(arguments) => match arguments.command {
             ImageCommand::List(arguments) => image_commands::list::run(
@@ -68,6 +71,12 @@ pub(super) fn run(
                 capture_executor,
                 stdout,
             ),
+            ImageCommand::Inspect(arguments) => {
+                image_commands::inspect::run(arguments.images, current_dir, stream_executor)
+            }
+            ImageCommand::Remove(arguments) => {
+                image_commands::remove::run(arguments.images, current_dir, stream_executor)
+            }
         },
         Command::Volume(arguments) => match arguments.command {
             VolumeCommand::List(arguments) => {
@@ -89,6 +98,9 @@ pub(super) fn run(
             ),
             NetworkCommand::Inspect(arguments) => {
                 network_commands::inspect::run(arguments.names, current_dir, stream_executor)
+            }
+            NetworkCommand::Remove(arguments) => {
+                network_commands::remove::run(arguments.names, current_dir, stream_executor)
             }
         },
         _ => unreachable!("non-host command was routed as host-scoped"),

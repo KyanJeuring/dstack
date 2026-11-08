@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 use clap::{ArgAction, Args, Subcommand};
 
 use super::host::nonempty_filter;
@@ -12,6 +14,10 @@ pub struct ImageArgs {
 pub enum ImageCommand {
     /// List Docker images using a DStack-rendered table.
     List(ImageListArgs),
+    /// Stream Docker's native image inspection JSON.
+    Inspect(ImageInspectArgs),
+    /// Remove only the explicitly named Docker images.
+    Remove(ImageRemoveArgs),
 }
 
 #[derive(Debug, Args)]
@@ -30,4 +36,18 @@ pub struct ImageListArgs {
         value_parser = nonempty_filter
     )]
     pub filters: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ImageInspectArgs {
+    /// Image names or IDs.
+    #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
+    pub images: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct ImageRemoveArgs {
+    /// Image names or IDs.
+    #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
+    pub images: Vec<OsString>,
 }

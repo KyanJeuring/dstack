@@ -22,14 +22,16 @@ pub use compose::ComposeArgs;
 pub use config::{ConfigArgs, ConfigCommand};
 pub use container::{
     ContainerArgs, ContainerCommand, ContainerInspectArgs, ContainerIpArgs, ContainerListArgs,
-    ContainerPortsArgs, ContainerStatsArgs,
+    ContainerPortsArgs, ContainerRemoveArgs, ContainerStatsArgs,
 };
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
-pub use image::{ImageArgs, ImageCommand, ImageListArgs};
+pub use image::{ImageArgs, ImageCommand, ImageInspectArgs, ImageListArgs, ImageRemoveArgs};
 pub use inspect::{LogsArgs, ServicesCommandArgs};
 pub use lifecycle::{DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs};
 pub use migration::{MigrationArgs, MigrationCommand};
-pub use network::{NetworkArgs, NetworkCommand, NetworkInspectArgs, NetworkListArgs};
+pub use network::{
+    NetworkArgs, NetworkCommand, NetworkInspectArgs, NetworkListArgs, NetworkRemoveArgs,
+};
 pub use registry::{RegistryArgs, RegistryCommand};
 pub use service_command::{ExecArgs, RunArgs};
 pub use session::UseArgs;
@@ -62,13 +64,13 @@ pub enum Command {
     List,
     /// Run raw Docker Compose arguments against the resolved stack.
     Compose(ComposeArgs),
-    /// Inspect host-scoped Docker containers without resolving a stack.
+    /// Inspect or explicitly remove host-scoped Docker containers.
     Container(ContainerArgs),
-    /// Inspect host-scoped Docker images without resolving a stack.
+    /// Inspect or explicitly remove host-scoped Docker images.
     Image(ImageArgs),
     /// Inspect or explicitly remove host-scoped Docker volumes.
     Volume(VolumeArgs),
-    /// Inspect host-scoped Docker networks without resolving a stack.
+    /// Inspect or explicitly remove host-scoped Docker networks.
     Network(NetworkArgs),
     /// Create and start services in detached, build-aware mode.
     Up(UpArgs),

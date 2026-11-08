@@ -1,6 +1,6 @@
 use std::{ffi::OsString, io, path::PathBuf};
 
-use super::{inspect, list};
+use super::{inspect, list, remove};
 use crate::{
     AppError, AppOutcome,
     output::Output,
@@ -75,6 +75,38 @@ fn network_inspect_streams_one_or_many_names_and_propagates_status() {
         assert_eq!(request.stdio, StdioPolicy::Inherit);
         assert!(executor.capture_requests().is_empty());
     }
+}
+
+#[test]
+fn network_remove_streams_exact_names_without_disconnect_force_or_prune() {
+    for (names, expected) in [
+        (vec!["frontend"], vec!["network", "rm", "frontend"]),
+        (
+            vec!["frontend", "backend"],
+            vec!["network", "rm", "frontend", "backend"],
+        ),
+    ] {
+        let executor = RecordingExecutor::default();
+        executor.push_status(43);
+        assert_eq!(
+            remove::run(os(&names), &cwd(), &executor).unwrap(),
+            AppOutcome::Child(ProcessStatus::from_code(43))
+        );
+        let request = &executor.requests()[0];
+        assert_eq!(request.args, os(&expected));
+        assert_eq!(request.stdio, StdioPolicy::Inherit);
+        assert!(!request.args.contains(&OsString::from("disconnect")));
+        assert!(!request.args.contains(&OsString::from("--force")));
+        assert!(!request.args.contains(&OsString::from("prune")));
+        assert!(executor.capture_requests().is_empty());
+    }
+
+    let executor = RecordingExecutor::default();
+    executor.push_spawn_error(io::ErrorKind::ConnectionRefused, "network denied");
+    assert!(matches!(
+        remove::run(os(&["frontend"]), &cwd(), &executor).unwrap_err(),
+        AppError::Process(_)
+    ));
 }
 
 #[test]

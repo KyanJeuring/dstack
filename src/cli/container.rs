@@ -22,6 +22,8 @@ pub enum ContainerCommand {
     Stats(ContainerStatsArgs),
     /// Stream Docker's native container inspection JSON.
     Inspect(ContainerInspectArgs),
+    /// Remove only the explicitly named Docker containers.
+    Remove(ContainerRemoveArgs),
 }
 
 #[derive(Debug, Args)]
@@ -73,6 +75,13 @@ pub struct ContainerStatsArgs {
 
 #[derive(Debug, Args)]
 pub struct ContainerInspectArgs {
+    /// Container names or IDs.
+    #[arg(value_name = "CONTAINER", required = true, num_args = 1..)]
+    pub containers: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct ContainerRemoveArgs {
     /// Container names or IDs.
     #[arg(value_name = "CONTAINER", required = true, num_args = 1..)]
     pub containers: Vec<OsString>,

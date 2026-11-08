@@ -1,6 +1,6 @@
 use std::{ffi::OsString, io, path::PathBuf};
 
-use super::{inspect, ip, list, ports, stats};
+use super::{inspect, ip, list, ports, remove, stats};
 use crate::{
     AppError, AppOutcome,
     output::{ColorPolicy, Output},
@@ -385,4 +385,33 @@ fn inspect_streams_one_or_many_containers_and_propagates_status() {
         assert_eq!(executor.requests()[0].stdio, StdioPolicy::Inherit);
         assert!(executor.capture_requests().is_empty());
     }
+}
+
+#[test]
+fn remove_streams_exact_explicit_containers_without_force_stop_or_volumes() {
+    for (containers, expected) in [
+        (vec!["web"], vec!["container", "rm", "web"]),
+        (vec!["web", "db"], vec!["container", "rm", "web", "db"]),
+    ] {
+        let executor = RecordingExecutor::default();
+        executor.push_status(27);
+        assert_eq!(
+            remove::run(os(&containers), &cwd(), &executor).unwrap(),
+            AppOutcome::Child(ProcessStatus::from_code(27))
+        );
+        let request = &executor.requests()[0];
+        assert_eq!(request.args, os(&expected));
+        assert_eq!(request.stdio, StdioPolicy::Inherit);
+        assert!(!request.args.contains(&OsString::from("--force")));
+        assert!(!request.args.contains(&OsString::from("--volumes")));
+        assert!(!request.args.contains(&OsString::from("stop")));
+        assert!(executor.capture_requests().is_empty());
+    }
+
+    let executor = RecordingExecutor::default();
+    executor.push_spawn_error(io::ErrorKind::NotFound, "docker missing");
+    assert!(matches!(
+        remove::run(os(&["web"]), &cwd(), &executor).unwrap_err(),
+        AppError::Process(_)
+    ));
 }

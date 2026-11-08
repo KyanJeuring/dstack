@@ -213,3 +213,105 @@ fn host_capture_status_propagates_without_rendering_partial_stdout() {
     assert_eq!(outcome, AppOutcome::Child(ProcessStatus::from_code(17)));
     assert!(stdout.is_empty());
 }
+
+#[test]
+fn phase8_targeted_host_commands_skip_bootstrap_and_preserve_exact_argv() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let cwd = temp.path().join("ordinary host cwd");
+    fs::create_dir_all(&cwd).unwrap();
+
+    for (argv, expected) in [
+        (
+            vec!["dstack", "container", "remove", "web", "db"],
+            vec!["container", "rm", "web", "db"],
+        ),
+        (
+            vec!["dstack", "image", "inspect", "img1", "img2"],
+            vec!["image", "inspect", "img1", "img2"],
+        ),
+        (
+            vec!["dstack", "image", "remove", "img1", "img2"],
+            vec!["image", "rm", "img1", "img2"],
+        ),
+        (
+            vec!["dstack", "network", "remove", "frontend", "backend"],
+            vec!["network", "rm", "frontend", "backend"],
+        ),
+    ] {
+        let executor = RecordingExecutor::default();
+        let outcome = run(&argv, &paths, &cwd, &executor, &mut Vec::new()).unwrap();
+        assert_eq!(
+            outcome,
+            AppOutcome::Child(ProcessStatus::from_code(0)),
+            "{argv:?}"
+        );
+        assert_eq!(executor.requests().len(), 1, "{argv:?}");
+        let request = &executor.requests()[0];
+        assert_eq!(
+            request.args,
+            expected.into_iter().map(OsString::from).collect::<Vec<_>>()
+        );
+        assert_eq!(request.current_dir, cwd);
+        assert!(!request.args.contains(&OsString::from("compose")));
+        assert!(executor.capture_requests().is_empty());
+        assert!(!paths.application_dir().exists());
+    }
+}
+
+#[test]
+fn phase8_targeted_host_commands_reject_root_context_options_before_execution() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let commands = [
+        ["container", "remove", "web"].as_slice(),
+        ["image", "inspect", "img"].as_slice(),
+        ["image", "remove", "img"].as_slice(),
+        ["network", "remove", "frontend"].as_slice(),
+    ];
+
+    for command in commands {
+        for option in [
+            ["--stack", "stack"].as_slice(),
+            ["--file", "compose.yaml"].as_slice(),
+        ] {
+            let argv = [vec!["dstack"], option.to_vec(), command.to_vec()].concat();
+            let executor = RecordingExecutor::default();
+            let error = run(&argv, &paths, temp.path(), &executor, &mut Vec::new()).unwrap_err();
+            assert!(matches!(error, AppError::InvalidOptions(_)), "{argv:?}");
+            assert!(executor.requests().is_empty(), "{argv:?}");
+            assert!(executor.capture_requests().is_empty(), "{argv:?}");
+            assert!(!paths.application_dir().exists(), "{argv:?}");
+        }
+    }
+}
+
+#[test]
+fn phase8_targeted_host_commands_propagate_status_and_spawn_errors() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let commands = [
+        ["dstack", "container", "remove", "web"].as_slice(),
+        ["dstack", "image", "inspect", "img"].as_slice(),
+        ["dstack", "image", "remove", "img"].as_slice(),
+        ["dstack", "network", "remove", "frontend"].as_slice(),
+    ];
+
+    for (index, argv) in commands.into_iter().enumerate() {
+        let executor = RecordingExecutor::default();
+        let code = 40 + i32::try_from(index).unwrap();
+        executor.push_status(code);
+        assert_eq!(
+            run(argv, &paths, temp.path(), &executor, &mut Vec::new()).unwrap(),
+            AppOutcome::Child(ProcessStatus::from_code(code))
+        );
+
+        let executor = RecordingExecutor::default();
+        executor.push_spawn_error(std::io::ErrorKind::NotFound, "docker missing");
+        assert!(matches!(
+            run(argv, &paths, temp.path(), &executor, &mut Vec::new()).unwrap_err(),
+            AppError::Process(_)
+        ));
+        assert!(!paths.application_dir().exists());
+    }
+}
