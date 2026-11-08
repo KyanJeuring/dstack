@@ -268,7 +268,8 @@ fn ip_renders_one_many_and_no_networks_and_uses_inspect_format() {
         executor.push_capture(capture.as_bytes().to_vec(), 0);
         let mut bytes = Vec::new();
         ip::run(
-            OsString::from("nginx"),
+            Some(OsString::from("nginx")),
+            false,
             &cwd(),
             &executor,
             &mut Output::plain(&mut bytes),
@@ -294,7 +295,8 @@ fn ip_propagates_nonzero_spawn_and_malformed_capture() {
     executor.push_capture(vec![0xff], 19);
     assert_eq!(
         ip::run(
-            OsString::from("nginx"),
+            Some(OsString::from("nginx")),
+            false,
             &cwd(),
             &executor,
             &mut Output::plain(&mut Vec::new()),
@@ -307,7 +309,8 @@ fn ip_propagates_nonzero_spawn_and_malformed_capture() {
     executor.push_capture(b"malformed\n".to_vec(), 0);
     assert!(matches!(
         ip::run(
-            OsString::from("nginx"),
+            Some(OsString::from("nginx")),
+            false,
             &cwd(),
             &executor,
             &mut Output::plain(&mut Vec::new()),
@@ -320,7 +323,153 @@ fn ip_propagates_nonzero_spawn_and_malformed_capture() {
     executor.push_capture_spawn_error(io::ErrorKind::PermissionDenied, "inspect denied");
     assert!(matches!(
         ip::run(
-            OsString::from("nginx"),
+            Some(OsString::from("nginx")),
+            false,
+            &cwd(),
+            &executor,
+            &mut Output::plain(&mut Vec::new()),
+        )
+        .unwrap_err(),
+        AppError::Process(_)
+    ));
+}
+
+#[test]
+fn ip_all_uses_all_container_inspection_and_renders_sorted_complete_rows() {
+    let executor = RecordingExecutor::default();
+    executor.push_capture(
+        b"redis-id\r\nisolated-id\r\njellyfin-id\r\ndb-id\r\npostgres-id\r\n".to_vec(),
+        0,
+    );
+    executor.push_capture(
+        br#"[
+          {"Id":"redis-id","Name":"/redis","NetworkSettings":{"Networks":{"monitoring":{"IPAddress":"172.22.0.5"},"backend":{"IPAddress":"172.21.0.3"}}}},
+          {"Id":"isolated-id","Name":"/isolated","NetworkSettings":{"Networks":{}}},
+          {"Id":"jellyfin-id","Name":"/jellyfin","NetworkSettings":{"Networks":{"jellyfin_default":{"IPAddress":"172.20.0.4"}}}},
+          {"Id":"db-id","Name":"/db","NetworkSettings":{"Networks":{"backend":{"IPAddress":""}}}},
+          {"Id":"postgres-id","Name":"/postgres","NetworkSettings":{"Networks":{"backend":{"IPAddress":"172.21.0.2"}}}}
+        ]"#
+            .to_vec(),
+        0,
+    );
+    let mut bytes = Vec::new();
+    assert_eq!(
+        ip::run(
+            None,
+            true,
+            &cwd(),
+            &executor,
+            &mut Output::plain(&mut bytes),
+        )
+        .unwrap(),
+        AppOutcome::Success
+    );
+
+    let rendered = String::from_utf8(bytes).unwrap();
+    assert!(!rendered.contains('\t'));
+    assert_eq!(
+        rendered
+            .lines()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        [
+            vec!["CONTAINER", "NETWORK", "IP"],
+            vec!["db", "backend", "-"],
+            vec!["isolated", "-", "-"],
+            vec!["jellyfin", "jellyfin_default", "172.20.0.4"],
+            vec!["postgres", "backend", "172.21.0.2"],
+            vec!["redis", "backend", "172.21.0.3"],
+            vec!["redis", "monitoring", "172.22.0.5"],
+        ]
+    );
+    let requests = executor.capture_requests();
+    assert_eq!(
+        requests[0].process.args,
+        os(&["container", "ls", "--all", "--quiet", "--no-trunc"])
+    );
+    assert_eq!(
+        requests[1].process.args,
+        os(&[
+            "container",
+            "inspect",
+            "redis-id",
+            "isolated-id",
+            "jellyfin-id",
+            "db-id",
+            "postgres-id"
+        ])
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.policy == CapturePolicy::StdoutWithInheritedStderr)
+    );
+    assert!(executor.requests().is_empty());
+}
+
+#[test]
+fn ip_all_empty_host_renders_header_without_inspect() {
+    let executor = RecordingExecutor::default();
+    let mut bytes = Vec::new();
+    assert_eq!(
+        ip::run(
+            None,
+            true,
+            &cwd(),
+            &executor,
+            &mut Output::plain(&mut bytes),
+        )
+        .unwrap(),
+        AppOutcome::Success
+    );
+    assert_eq!(bytes, b"CONTAINER  NETWORK  IP\n");
+    assert_eq!(executor.capture_requests().len(), 1);
+}
+
+#[test]
+fn ip_all_propagates_child_spawn_and_shape_failures_without_output() {
+    let executor = RecordingExecutor::default();
+    executor.push_capture(b"ignored\n".to_vec(), 36);
+    let mut bytes = Vec::new();
+    assert_eq!(
+        ip::run(
+            None,
+            true,
+            &cwd(),
+            &executor,
+            &mut Output::plain(&mut bytes),
+        )
+        .unwrap(),
+        AppOutcome::Child(ProcessStatus::from_code(36))
+    );
+    assert!(bytes.is_empty());
+
+    let executor = RecordingExecutor::default();
+    executor.push_capture(b"id\n".to_vec(), 0);
+    executor.push_capture(
+        br#"[{"Id":"id","Name":"/name","NetworkSettings":{}}]"#.to_vec(),
+        0,
+    );
+    let mut bytes = Vec::new();
+    assert!(matches!(
+        ip::run(
+            None,
+            true,
+            &cwd(),
+            &executor,
+            &mut Output::plain(&mut bytes),
+        )
+        .unwrap_err(),
+        AppError::DockerOutput(_)
+    ));
+    assert!(bytes.is_empty());
+
+    let executor = RecordingExecutor::default();
+    executor.push_capture_spawn_error(io::ErrorKind::NotFound, "docker missing");
+    assert!(matches!(
+        ip::run(
+            None,
+            true,
             &cwd(),
             &executor,
             &mut Output::plain(&mut Vec::new()),
@@ -379,7 +528,15 @@ fn inspect_streams_one_or_many_containers_and_propagates_status() {
     ] {
         let executor = RecordingExecutor::default();
         executor.push_status(23);
-        let outcome = inspect::run(os(&containers), &cwd(), &executor).unwrap();
+        let outcome = inspect::run(
+            false,
+            os(&containers),
+            &cwd(),
+            &executor,
+            &executor,
+            &mut Output::plain(&mut Vec::new()),
+        )
+        .unwrap();
         assert_eq!(outcome, AppOutcome::Child(ProcessStatus::from_code(23)));
         assert_eq!(executor.requests()[0].args, os(&expected));
         assert_eq!(executor.requests()[0].stdio, StdioPolicy::Inherit);

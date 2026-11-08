@@ -50,37 +50,25 @@ fn volume_list_captures_exact_filters_and_renders_table() {
 
 #[test]
 fn volume_inspect_and_remove_stream_only_explicit_names_without_force_or_prune() {
-    for (run, names, expected) in [
+    for (names, expected) in [
+        (vec!["app_data"], vec!["volume", "inspect", "app_data"]),
         (
-            inspect::run
-                as fn(
-                    Vec<OsString>,
-                    &std::path::Path,
-                    &dyn crate::process::ProcessExecutor,
-                ) -> Result<AppOutcome, AppError>,
-            vec!["app_data"],
-            vec!["volume", "inspect", "app_data"],
-        ),
-        (
-            inspect::run,
             vec!["app_data", "cache"],
             vec!["volume", "inspect", "app_data", "cache"],
-        ),
-        (
-            remove::run,
-            vec!["app_data"],
-            vec!["volume", "rm", "app_data"],
-        ),
-        (
-            remove::run,
-            vec!["app_data", "cache"],
-            vec!["volume", "rm", "app_data", "cache"],
         ),
     ] {
         let executor = RecordingExecutor::default();
         executor.push_status(31);
         assert_eq!(
-            run(os(&names), &cwd(), &executor).unwrap(),
+            inspect::run(
+                false,
+                os(&names),
+                &cwd(),
+                &executor,
+                &executor,
+                &mut Output::plain(&mut Vec::new()),
+            )
+            .unwrap(),
             AppOutcome::Child(ProcessStatus::from_code(31))
         );
         let request = &executor.requests()[0];
@@ -89,6 +77,22 @@ fn volume_inspect_and_remove_stream_only_explicit_names_without_force_or_prune()
         assert_eq!(request.stdio, StdioPolicy::Inherit);
         assert!(!request.args.contains(&OsString::from("--force")));
         assert!(!request.args.contains(&OsString::from("prune")));
+        assert!(executor.capture_requests().is_empty());
+    }
+    for (names, expected) in [
+        (vec!["app_data"], vec!["volume", "rm", "app_data"]),
+        (
+            vec!["app_data", "cache"],
+            vec!["volume", "rm", "app_data", "cache"],
+        ),
+    ] {
+        let executor = RecordingExecutor::default();
+        executor.push_status(31);
+        assert_eq!(
+            remove::run(os(&names), &cwd(), &executor).unwrap(),
+            AppOutcome::Child(ProcessStatus::from_code(31))
+        );
+        assert_eq!(executor.requests()[0].args, os(&expected));
         assert!(executor.capture_requests().is_empty());
     }
 }

@@ -45,6 +45,7 @@ pub(super) fn run(
             ),
             ContainerCommand::Ip(arguments) => container_commands::ip::run(
                 arguments.container,
+                arguments.all,
                 current_dir,
                 capture_executor,
                 stdout,
@@ -56,9 +57,14 @@ pub(super) fn run(
                 current_dir,
                 stream_executor,
             ),
-            ContainerCommand::Inspect(arguments) => {
-                container_commands::inspect::run(arguments.containers, current_dir, stream_executor)
-            }
+            ContainerCommand::Inspect(arguments) => container_commands::inspect::run(
+                arguments.all,
+                arguments.containers,
+                current_dir,
+                stream_executor,
+                capture_executor,
+                stdout,
+            ),
             ContainerCommand::Remove(arguments) => {
                 container_commands::remove::run(arguments.containers, current_dir, stream_executor)
             }
@@ -71,9 +77,14 @@ pub(super) fn run(
                 capture_executor,
                 stdout,
             ),
-            ImageCommand::Inspect(arguments) => {
-                image_commands::inspect::run(arguments.images, current_dir, stream_executor)
-            }
+            ImageCommand::Inspect(arguments) => image_commands::inspect::run(
+                arguments.all,
+                arguments.images,
+                current_dir,
+                stream_executor,
+                capture_executor,
+                stdout,
+            ),
             ImageCommand::Remove(arguments) => {
                 image_commands::remove::run(arguments.images, current_dir, stream_executor)
             }
@@ -82,9 +93,14 @@ pub(super) fn run(
             VolumeCommand::List(arguments) => {
                 volume_commands::list::run(arguments.filters, current_dir, capture_executor, stdout)
             }
-            VolumeCommand::Inspect(arguments) => {
-                volume_commands::inspect::run(arguments.names, current_dir, stream_executor)
-            }
+            VolumeCommand::Inspect(arguments) => volume_commands::inspect::run(
+                arguments.all,
+                arguments.names,
+                current_dir,
+                stream_executor,
+                capture_executor,
+                stdout,
+            ),
             VolumeCommand::Remove(arguments) => {
                 volume_commands::remove::run(arguments.names, current_dir, stream_executor)
             }
@@ -96,9 +112,14 @@ pub(super) fn run(
                 capture_executor,
                 stdout,
             ),
-            NetworkCommand::Inspect(arguments) => {
-                network_commands::inspect::run(arguments.names, current_dir, stream_executor)
-            }
+            NetworkCommand::Inspect(arguments) => network_commands::inspect::run(
+                arguments.all,
+                arguments.names,
+                current_dir,
+                stream_executor,
+                capture_executor,
+                stdout,
+            ),
             NetworkCommand::Remove(arguments) => {
                 network_commands::remove::run(arguments.names, current_dir, stream_executor)
             }

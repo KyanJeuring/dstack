@@ -154,6 +154,55 @@ fall back to the unchanged lifecycle invocation; Docker Compose remains the
 authority. Do not copy this shortcut to `up`, `down`, or another lifecycle
 command without separately defining and approving its semantics.
 
+Phase 8.2 adds one focused system-wide inspection workflow under the Docker
+module. It performs `enumerate -> ordered deduplication -> bounded inspect
+batches -> JSON-array aggregation`. Container enumeration includes stopped
+containers, image enumeration includes intermediate images, volume enumeration
+uses the normal all-volume listing, and network enumeration includes every
+network Docker reports. Identifier parsing is line-oriented, accepts LF/CRLF
+and a final unterminated line, rejects malformed identifiers, and never shell
+splits captured text. Duplicate image IDs—and any duplicate identifiers from
+another list—are inspected once at their first-seen position.
+
+All-resource inspection batches at most 64 concrete targets per Docker inspect
+invocation so argv growth stays conservative on Unix and Windows. Every batch
+must succeed and parse as a JSON array before DStack writes one pretty aggregate
+array to stdout. An empty enumeration writes `[]`; an enumeration or inspect
+child failure returns that Docker status; spawn/wait and JSON-shape failures
+remain typed DStack errors. Docker stderr is inherited because these are
+requested primary operations, unlike Phase 8.1's intentionally silent state
+probes. The enumerate-then-inspect snapshot has an unavoidable race: if a
+resource disappears, Docker's concrete inspect failure is returned without a
+retry or partial JSON.
+
+Explicit named inspect commands deliberately retain direct inherited-stdio
+Docker execution. They do not enumerate, capture, reformat, or aggregate native
+output. `container ip --all` reuses the shared all-container inspection data,
+then validates a typed inspect shape and renders one row per container/network
+membership. It removes only Docker's leading name slash, renders missing IPv4
+or network membership as `-`, and sorts by container name then network name.
+The one-container IP command keeps its existing lightweight formatted inspect.
+
+The Phase 8.2 read-only host-command audit is:
+
+| Command | `--all` decision |
+|---|---|
+| `container list` | Already supports all container states |
+| `container inspect` | Added; inspect every container |
+| `container ip` | Added; aggregate every container/network membership |
+| `container ports` | Not added; no operand is already the running-container overview |
+| `container stats` | Already supports Docker's native all-container mode |
+| `image list` | Already supports all/intermediate images |
+| `image inspect` | Added; inspect every unique image ID |
+| `volume list` | Inherently lists all volumes |
+| `volume inspect` | Added; inspect every volume |
+| `network list` | Inherently lists all networks |
+| `network inspect` | Added; inspect every network Docker reports |
+
+Do not infer further host commands from that matrix. Phase 8.2 does not add
+resource prune, system maintenance, stop-all, completion generation, manpages,
+or update/installer behavior.
+
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
 developer's real v1 or v2 state. The override contains `dstack.conf` and

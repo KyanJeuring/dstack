@@ -134,32 +134,25 @@ fn image_list_handles_malformed_nonzero_and_spawn_results_without_panicking() {
 
 #[test]
 fn image_inspect_and_remove_stream_exact_operands_and_status() {
-    for (run, images, expected) in [
+    for (images, expected) in [
+        (vec!["img1"], vec!["image", "inspect", "img1"]),
         (
-            inspect::run as Handler,
-            vec!["img1"],
-            vec!["image", "inspect", "img1"],
-        ),
-        (
-            inspect::run as Handler,
             vec!["img1", "img2"],
             vec!["image", "inspect", "img1", "img2"],
-        ),
-        (
-            remove::run as Handler,
-            vec!["img1"],
-            vec!["image", "rm", "img1"],
-        ),
-        (
-            remove::run as Handler,
-            vec!["img1", "img2"],
-            vec!["image", "rm", "img1", "img2"],
         ),
     ] {
         let executor = RecordingExecutor::default();
         executor.push_status(33);
         assert_eq!(
-            run(os(&images), &cwd(), &executor).unwrap(),
+            inspect::run(
+                false,
+                os(&images),
+                &cwd(),
+                &executor,
+                &executor,
+                &mut Output::plain(&mut Vec::new()),
+            )
+            .unwrap(),
             AppOutcome::Child(ProcessStatus::from_code(33))
         );
         let request = &executor.requests()[0];
@@ -169,22 +162,42 @@ fn image_inspect_and_remove_stream_exact_operands_and_status() {
         assert!(!request.args.contains(&OsString::from("prune")));
         assert!(executor.capture_requests().is_empty());
     }
+    for (images, expected) in [
+        (vec!["img1"], vec!["image", "rm", "img1"]),
+        (vec!["img1", "img2"], vec!["image", "rm", "img1", "img2"]),
+    ] {
+        let executor = RecordingExecutor::default();
+        executor.push_status(33);
+        assert_eq!(
+            remove::run(os(&images), &cwd(), &executor).unwrap(),
+            AppOutcome::Child(ProcessStatus::from_code(33))
+        );
+        assert_eq!(executor.requests()[0].args, os(&expected));
+        assert!(executor.capture_requests().is_empty());
+    }
 }
 
 #[test]
 fn image_inspect_and_remove_keep_spawn_failures_distinct() {
-    for run in [inspect::run as Handler, remove::run as Handler] {
-        let executor = RecordingExecutor::default();
-        executor.push_spawn_error(io::ErrorKind::PermissionDenied, "image denied");
-        assert!(matches!(
-            run(os(&["img"]), &cwd(), &executor).unwrap_err(),
-            AppError::Process(_)
-        ));
-    }
-}
+    let executor = RecordingExecutor::default();
+    executor.push_spawn_error(io::ErrorKind::PermissionDenied, "image denied");
+    assert!(matches!(
+        inspect::run(
+            false,
+            os(&["img"]),
+            &cwd(),
+            &executor,
+            &executor,
+            &mut Output::plain(&mut Vec::new()),
+        )
+        .unwrap_err(),
+        AppError::Process(_)
+    ));
 
-type Handler = fn(
-    Vec<OsString>,
-    &std::path::Path,
-    &dyn crate::process::ProcessExecutor,
-) -> Result<AppOutcome, AppError>;
+    let executor = RecordingExecutor::default();
+    executor.push_spawn_error(io::ErrorKind::PermissionDenied, "image denied");
+    assert!(matches!(
+        remove::run(os(&["img"]), &cwd(), &executor).unwrap_err(),
+        AppError::Process(_)
+    ));
+}

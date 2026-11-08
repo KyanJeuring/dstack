@@ -18,3 +18,10 @@ pub(crate) struct NetworkAddressRow {
     pub(crate) network: String,
     pub(crate) ip: String,
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ContainerNetworkAddressRow {
+    pub(crate) container: String,
+    pub(crate) network: String,
+    pub(crate) ip: String,
+}

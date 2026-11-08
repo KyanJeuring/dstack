@@ -16,11 +16,11 @@ pub enum ContainerCommand {
     List(ContainerListArgs),
     /// Show published ports for running containers or query one container directly.
     Ports(ContainerPortsArgs),
-    /// Show a container's address on each attached Docker network.
+    /// Show Docker network addresses for one container or all containers.
     Ip(ContainerIpArgs),
     /// Stream Docker's native live container resource statistics.
     Stats(ContainerStatsArgs),
-    /// Stream Docker's native container inspection JSON.
+    /// Inspect explicitly named Docker containers or all containers.
     Inspect(ContainerInspectArgs),
     /// Remove only the explicitly named Docker containers.
     Remove(ContainerRemoveArgs),
@@ -55,7 +55,16 @@ pub struct ContainerPortsArgs {
 #[derive(Debug, Args)]
 pub struct ContainerIpArgs {
     /// Container name or ID.
-    pub container: OsString,
+    #[arg(required_unless_present = "all", conflicts_with = "all")]
+    pub container: Option<OsString>,
+
+    /// Include all containers and render one row per network membership.
+    #[arg(
+        long,
+        required_unless_present = "container",
+        conflicts_with = "container"
+    )]
+    pub all: bool,
 }
 
 #[derive(Debug, Args)]
@@ -76,8 +85,21 @@ pub struct ContainerStatsArgs {
 #[derive(Debug, Args)]
 pub struct ContainerInspectArgs {
     /// Container names or IDs.
-    #[arg(value_name = "CONTAINER", required = true, num_args = 1..)]
+    #[arg(
+        value_name = "CONTAINER",
+        num_args = 1..,
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
     pub containers: Vec<OsString>,
+
+    /// Inspect all Docker containers.
+    #[arg(
+        long,
+        required_unless_present = "containers",
+        conflicts_with = "containers"
+    )]
+    pub all: bool,
 }
 
 #[derive(Debug, Args)]

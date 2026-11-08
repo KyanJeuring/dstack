@@ -42,17 +42,22 @@ dstack [-s NAME] [--file FILE]... run SERVICE [-- COMMAND...]
 dstack container list [-a|--all] [-f|--filter FILTER]...
 dstack container ports [CONTAINER [PRIVATE_PORT]]
 dstack container ip CONTAINER
+dstack container ip --all
 dstack container stats [-a|--all] [--no-stream] [CONTAINER...]
 dstack container inspect CONTAINER...
+dstack container inspect --all
 dstack container remove CONTAINER...
 dstack image list [-a|--all] [-f|--filter FILTER]...
 dstack image inspect IMAGE...
+dstack image inspect --all
 dstack image remove IMAGE...
 dstack volume list [-f|--filter FILTER]...
 dstack volume inspect NAME...
+dstack volume inspect --all
 dstack volume remove NAME...
 dstack network list [-f|--filter FILTER]...
 dstack network inspect NAME...
+dstack network inspect --all
 dstack network remove NAME...
 ```
 
@@ -103,10 +108,32 @@ project, registry entry, Compose file, or `ResolvedContext`. Consequently,
 `--stack` and `--file` are errors for every command in these namespaces.
 Metadata list operations request machine-oriented Docker rows, validate them,
 and render aligned DStack tables. Docker stderr remains inherited. Live stats,
-inspect JSON, one-container port lookup, and explicit resource removal remain
-Docker-owned streaming output. Explicit removals never add force, stop,
-disconnect, volume-removal, or prune behavior. No v2 host command invokes a
-shell pipeline, pager, or external table utility.
+explicitly named inspect JSON, one-container port lookup, and explicit resource
+removal remain Docker-owned streaming output. `inspect --all` is deliberately
+explicit: it enumerates every resource of that type and emits one JSON array,
+including `[]` when the daemon reports none. Explicit removals never add force,
+stop, disconnect, volume-removal, or prune behavior. No v2 host command invokes
+a shell pipeline, pager, or external table utility.
+
+Use `container ip --all` for a stable host-wide IPv4 overview. It includes
+stopped containers, shows one row per Docker network membership, and uses `-`
+when a container has no current IPv4 assignment or no network membership:
+
+```text
+$ dstack container ip --all
+CONTAINER  NETWORK           IP
+db         backend           -
+jellyfin   jellyfin_default  172.20.0.4
+isolated   -                 -
+redis      backend           172.21.0.3
+redis      monitoring        172.22.0.5
+```
+
+The existing list and overview semantics stay focused: container and image
+lists already define `--all`, container stats delegates its existing `--all`
+to Docker, and volume/network lists are inherently host-wide. Container ports
+with no operand remains the runtime-wide overview for running containers; it
+does not gain an ambiguous stopped-container `--all` mode.
 
 ### V2 terminal sessions and shell integration
 
@@ -245,6 +272,14 @@ stop-all, and purge helpers remain deferred. Phase 8.1 adds only explicit
 `container remove`, `image inspect`, `image remove`, and `network remove`
 operations alongside the existing targeted volume removal; it does not add a
 generic Docker passthrough or resource creation commands.
+
+Phase 8.2 adds only read-only system-wide inspection: `inspect --all` for
+containers, images, volumes, and networks, plus `container ip --all`. A named
+inspect still streams Docker's native response directly, while an all-resource
+inspect produces one DStack-owned JSON array. These commands remain host-scoped
+and do not read stack/session/configuration state. Resource-specific prune,
+system maintenance, stop-all, shell completion, and update/installer work are
+not part of this phase.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

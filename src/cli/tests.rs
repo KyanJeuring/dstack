@@ -482,6 +482,153 @@ fn container_ports_ip_stats_and_inspect_are_typed() {
 }
 
 #[test]
+fn phase8_system_inspection_requires_exactly_all_or_explicit_operands() {
+    for (namespace, operand) in [
+        ("container", "container-one"),
+        ("image", "image-one"),
+        ("volume", "volume-one"),
+        ("network", "network-one"),
+    ] {
+        for operands in [vec![operand], vec![operand, "second"]] {
+            let argv = [vec!["dstack", namespace, "inspect"], operands].concat();
+            let cli = Cli::try_parse_from(argv).unwrap();
+            match cli.command.unwrap() {
+                Command::Container(arguments) => {
+                    let ContainerCommand::Inspect(arguments) = arguments.command else {
+                        panic!("container inspect should parse");
+                    };
+                    assert!(!arguments.all);
+                    assert!(!arguments.containers.is_empty());
+                }
+                Command::Image(arguments) => {
+                    let ImageCommand::Inspect(arguments) = arguments.command else {
+                        panic!("image inspect should parse");
+                    };
+                    assert!(!arguments.all);
+                    assert!(!arguments.images.is_empty());
+                }
+                Command::Volume(arguments) => {
+                    let VolumeCommand::Inspect(arguments) = arguments.command else {
+                        panic!("volume inspect should parse");
+                    };
+                    assert!(!arguments.all);
+                    assert!(!arguments.names.is_empty());
+                }
+                Command::Network(arguments) => {
+                    let NetworkCommand::Inspect(arguments) = arguments.command else {
+                        panic!("network inspect should parse");
+                    };
+                    assert!(!arguments.all);
+                    assert!(!arguments.names.is_empty());
+                }
+                _ => panic!("host inspect namespace should parse"),
+            }
+        }
+
+        let cli = Cli::try_parse_from(["dstack", namespace, "inspect", "--all"]).unwrap();
+        let all = match cli.command.unwrap() {
+            Command::Container(arguments) => {
+                let ContainerCommand::Inspect(arguments) = arguments.command else {
+                    panic!("container inspect should parse");
+                };
+                arguments.all && arguments.containers.is_empty()
+            }
+            Command::Image(arguments) => {
+                let ImageCommand::Inspect(arguments) = arguments.command else {
+                    panic!("image inspect should parse");
+                };
+                arguments.all && arguments.images.is_empty()
+            }
+            Command::Volume(arguments) => {
+                let VolumeCommand::Inspect(arguments) = arguments.command else {
+                    panic!("volume inspect should parse");
+                };
+                arguments.all && arguments.names.is_empty()
+            }
+            Command::Network(arguments) => {
+                let NetworkCommand::Inspect(arguments) = arguments.command else {
+                    panic!("network inspect should parse");
+                };
+                arguments.all && arguments.names.is_empty()
+            }
+            _ => false,
+        };
+        assert!(all);
+
+        assert!(Cli::try_parse_from(["dstack", namespace, "inspect"]).is_err());
+        assert!(Cli::try_parse_from(["dstack", namespace, "inspect", "--all", operand]).is_err());
+    }
+
+    let Some(Command::Container(arguments)) =
+        Cli::try_parse_from(["dstack", "container", "ip", "container-one"])
+            .unwrap()
+            .command
+    else {
+        panic!("container ip should parse");
+    };
+    let ContainerCommand::Ip(arguments) = arguments.command else {
+        panic!("container ip should parse");
+    };
+    assert_eq!(arguments.container, Some(OsString::from("container-one")));
+    assert!(!arguments.all);
+
+    let Some(Command::Container(arguments)) =
+        Cli::try_parse_from(["dstack", "container", "ip", "--all"])
+            .unwrap()
+            .command
+    else {
+        panic!("container ip --all should parse");
+    };
+    let ContainerCommand::Ip(arguments) = arguments.command else {
+        panic!("container ip should parse");
+    };
+    assert!(arguments.container.is_none());
+    assert!(arguments.all);
+    assert!(Cli::try_parse_from(["dstack", "container", "ip"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "container", "ip", "--all", "container-one"]).is_err());
+}
+
+#[test]
+fn read_only_all_audit_keeps_only_the_defined_flags() {
+    assert!(Cli::try_parse_from(["dstack", "container", "list", "--all"]).is_ok());
+    assert!(Cli::try_parse_from(["dstack", "container", "stats", "--all"]).is_ok());
+    assert!(Cli::try_parse_from(["dstack", "image", "list", "--all"]).is_ok());
+
+    for argv in [
+        ["dstack", "container", "ports", "--all"].as_slice(),
+        ["dstack", "volume", "list", "--all"].as_slice(),
+        ["dstack", "network", "list", "--all"].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+    }
+}
+
+#[test]
+fn phase8_system_inspection_help_describes_all_without_internal_details() {
+    let mut command = Cli::command();
+    for (namespace, operation, expected) in [
+        ("container", "inspect", "Inspect all Docker containers"),
+        ("image", "inspect", "Inspect all Docker images"),
+        ("volume", "inspect", "Inspect all Docker volumes"),
+        ("network", "inspect", "Inspect all Docker networks"),
+        (
+            "container",
+            "ip",
+            "Include all containers and render one row per network membership",
+        ),
+    ] {
+        let namespace = command.find_subcommand_mut(namespace).unwrap();
+        let operation = namespace.find_subcommand_mut(operation).unwrap();
+        let mut help = Vec::new();
+        operation.write_long_help(&mut help).unwrap();
+        let help = String::from_utf8(help).unwrap();
+        assert!(help.contains(expected), "{help}");
+        assert!(!help.contains("batch"));
+        assert!(!help.contains("serde"));
+    }
+}
+
+#[test]
 fn targeted_host_lifecycle_commands_require_and_preserve_operands() {
     for (argv, expected) in [
         (vec!["dstack", "container", "remove", "one"], vec!["one"]),

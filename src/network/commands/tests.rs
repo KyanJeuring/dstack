@@ -67,7 +67,15 @@ fn network_inspect_streams_one_or_many_names_and_propagates_status() {
         let executor = RecordingExecutor::default();
         executor.push_status(42);
         assert_eq!(
-            inspect::run(os(&names), &cwd(), &executor).unwrap(),
+            inspect::run(
+                false,
+                os(&names),
+                &cwd(),
+                &executor,
+                &executor,
+                &mut Output::plain(&mut Vec::new()),
+            )
+            .unwrap(),
             AppOutcome::Child(ProcessStatus::from_code(42))
         );
         let request = &executor.requests()[0];

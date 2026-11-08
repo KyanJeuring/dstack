@@ -36,7 +36,7 @@ pub use registry::{RegistryArgs, RegistryCommand};
 pub use service_command::{ExecArgs, RunArgs};
 pub use session::UseArgs;
 pub use shell::{ShellActivateArgs, ShellArgs, ShellCommand, ShellManageArgs, ShellStatusArgs};
-pub use volume::{VolumeArgs, VolumeCommand, VolumeListArgs, VolumeNamesArgs};
+pub use volume::{VolumeArgs, VolumeCommand, VolumeInspectArgs, VolumeListArgs, VolumeNamesArgs};
 
 #[derive(Debug, Parser)]
 #[command(

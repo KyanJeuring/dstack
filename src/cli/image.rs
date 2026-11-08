@@ -14,7 +14,7 @@ pub struct ImageArgs {
 pub enum ImageCommand {
     /// List Docker images using a DStack-rendered table.
     List(ImageListArgs),
-    /// Stream Docker's native image inspection JSON.
+    /// Inspect explicitly named Docker images or all images.
     Inspect(ImageInspectArgs),
     /// Remove only the explicitly named Docker images.
     Remove(ImageRemoveArgs),
@@ -41,8 +41,17 @@ pub struct ImageListArgs {
 #[derive(Debug, Args)]
 pub struct ImageInspectArgs {
     /// Image names or IDs.
-    #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
+    #[arg(
+        value_name = "IMAGE",
+        num_args = 1..,
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
     pub images: Vec<OsString>,
+
+    /// Inspect all Docker images.
+    #[arg(long, required_unless_present = "images", conflicts_with = "images")]
+    pub all: bool,
 }
 
 #[derive(Debug, Args)]
