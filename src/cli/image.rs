@@ -18,6 +18,8 @@ pub enum ImageCommand {
     Inspect(ImageInspectArgs),
     /// Remove only the explicitly named Docker images.
     Remove(ImageRemoveArgs),
+    /// Remove dangling Docker images by default.
+    Prune(ImagePruneArgs),
 }
 
 #[derive(Debug, Args)]
@@ -59,4 +61,24 @@ pub struct ImageRemoveArgs {
     /// Image names or IDs.
     #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
     pub images: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct ImagePruneArgs {
+    /// Remove all unused images, not just dangling images.
+    #[arg(long = "all")]
+    pub all: bool,
+
+    /// Forward a Docker prune filter; repeat to preserve order.
+    #[arg(
+        long = "filter",
+        value_name = "FILTER",
+        action = ArgAction::Append,
+        value_parser = nonempty_filter
+    )]
+    pub filters: Vec<String>,
+
+    /// Skip Docker's native confirmation prompt.
+    #[arg(long = "force")]
+    pub force: bool,
 }

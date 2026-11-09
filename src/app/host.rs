@@ -68,6 +68,12 @@ pub(super) fn run(
             ContainerCommand::Remove(arguments) => {
                 container_commands::remove::run(arguments.containers, current_dir, stream_executor)
             }
+            ContainerCommand::Prune(arguments) => container_commands::prune::run(
+                arguments.filters,
+                arguments.force,
+                current_dir,
+                stream_executor,
+            ),
         },
         Command::Image(arguments) => match arguments.command {
             ImageCommand::List(arguments) => image_commands::list::run(
@@ -88,6 +94,13 @@ pub(super) fn run(
             ImageCommand::Remove(arguments) => {
                 image_commands::remove::run(arguments.images, current_dir, stream_executor)
             }
+            ImageCommand::Prune(arguments) => image_commands::prune::run(
+                arguments.all,
+                arguments.filters,
+                arguments.force,
+                current_dir,
+                stream_executor,
+            ),
         },
         Command::Volume(arguments) => match arguments.command {
             VolumeCommand::List(arguments) => {
@@ -104,6 +117,13 @@ pub(super) fn run(
             VolumeCommand::Remove(arguments) => {
                 volume_commands::remove::run(arguments.names, current_dir, stream_executor)
             }
+            VolumeCommand::Prune(arguments) => volume_commands::prune::run(
+                arguments.all,
+                arguments.filters,
+                arguments.force,
+                current_dir,
+                stream_executor,
+            ),
         },
         Command::Network(arguments) => match arguments.command {
             NetworkCommand::List(arguments) => network_commands::list::run(
@@ -123,6 +143,12 @@ pub(super) fn run(
             NetworkCommand::Remove(arguments) => {
                 network_commands::remove::run(arguments.names, current_dir, stream_executor)
             }
+            NetworkCommand::Prune(arguments) => network_commands::prune::run(
+                arguments.filters,
+                arguments.force,
+                current_dir,
+                stream_executor,
+            ),
         },
         _ => unreachable!("non-host command was routed as host-scoped"),
     }

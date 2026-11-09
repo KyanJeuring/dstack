@@ -24,6 +24,8 @@ pub enum ContainerCommand {
     Inspect(ContainerInspectArgs),
     /// Remove only the explicitly named Docker containers.
     Remove(ContainerRemoveArgs),
+    /// Remove stopped Docker containers selected by Docker.
+    Prune(ContainerPruneArgs),
 }
 
 #[derive(Debug, Args)]
@@ -107,4 +109,20 @@ pub struct ContainerRemoveArgs {
     /// Container names or IDs.
     #[arg(value_name = "CONTAINER", required = true, num_args = 1..)]
     pub containers: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct ContainerPruneArgs {
+    /// Forward a Docker prune filter; repeat to preserve order.
+    #[arg(
+        long = "filter",
+        value_name = "FILTER",
+        action = ArgAction::Append,
+        value_parser = nonempty_filter
+    )]
+    pub filters: Vec<String>,
+
+    /// Skip Docker's native confirmation prompt.
+    #[arg(long = "force")]
+    pub force: bool,
 }

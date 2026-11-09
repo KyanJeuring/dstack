@@ -18,6 +18,8 @@ pub enum VolumeCommand {
     Inspect(VolumeInspectArgs),
     /// Remove only the explicitly named Docker volumes.
     Remove(VolumeNamesArgs),
+    /// Remove unused anonymous local Docker volumes by default.
+    Prune(VolumePruneArgs),
 }
 
 #[derive(Debug, Args)]
@@ -55,4 +57,24 @@ pub struct VolumeInspectArgs {
     /// Inspect all Docker volumes.
     #[arg(long, required_unless_present = "names", conflicts_with = "names")]
     pub all: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct VolumePruneArgs {
+    /// Remove all unused local volumes, including named volumes.
+    #[arg(long = "all")]
+    pub all: bool,
+
+    /// Forward a Docker prune filter; repeat to preserve order.
+    #[arg(
+        long = "filter",
+        value_name = "FILTER",
+        action = ArgAction::Append,
+        value_parser = nonempty_filter
+    )]
+    pub filters: Vec<String>,
+
+    /// Skip Docker's native confirmation prompt.
+    #[arg(long = "force")]
+    pub force: bool,
 }

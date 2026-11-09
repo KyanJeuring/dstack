@@ -47,18 +47,22 @@ dstack container stats [-a|--all] [--no-stream] [CONTAINER...]
 dstack container inspect CONTAINER...
 dstack container inspect --all
 dstack container remove CONTAINER...
+dstack container prune [--filter FILTER]... [--force]
 dstack image list [-a|--all] [-f|--filter FILTER]...
 dstack image inspect IMAGE...
 dstack image inspect --all
 dstack image remove IMAGE...
+dstack image prune [--all] [--filter FILTER]... [--force]
 dstack volume list [-f|--filter FILTER]...
 dstack volume inspect NAME...
 dstack volume inspect --all
 dstack volume remove NAME...
+dstack volume prune [--all] [--filter FILTER]... [--force]
 dstack network list [-f|--filter FILTER]...
 dstack network inspect NAME...
 dstack network inspect --all
 dstack network remove NAME...
+dstack network prune [--filter FILTER]... [--force]
 ```
 
 The first stack, configuration, registry, or migration operation creates
@@ -114,6 +118,36 @@ explicit: it enumerates every resource of that type and emits one JSON array,
 including `[]` when the daemon reports none. Explicit removals never add force,
 stop, disconnect, volume-removal, or prune behavior. No v2 host command invokes
 a shell pipeline, pager, or external table utility.
+
+Resource prune commands also delegate directly to Docker. DStack does not
+pre-enumerate candidates, reproduce Docker's eligibility rules, parse reclaimed
+space, or add a second confirmation. Docker prompts for confirmation by
+default; use the long-form `--force` option only when intentionally skipping
+that native prompt. The default scopes are deliberately resource-specific:
+
+| Command | Default scope |
+|---|---|
+| `dstack container prune` | Stopped containers |
+| `dstack image prune` | Dangling images |
+| `dstack image prune --all` | All unused images |
+| `dstack volume prune` | Unused anonymous local volumes |
+| `dstack volume prune --all` | All unused local volumes, including named volumes |
+| `dstack network prune` | Unused networks |
+
+Only image and volume prune expose `--all`, because Docker defines a distinct
+broader operation for those resources. `--all` and `--force` are independent:
+neither implies the other. All four commands accept repeatable, opaque Docker
+filters and preserve their order; Docker validates the resource-specific
+filter syntax:
+
+```text
+dstack container prune --filter until=24h --filter label=temporary
+dstack image prune --all --filter until=168h --force
+```
+
+Prune inherits stdin, stdout, and stderr. This lets Docker own its confirmation,
+warnings, deleted-resource list, reclaimed-space output, and exit status. DStack
+does not expose short destructive `-a` or `-f` aliases for prune.
 
 Use `container ip --all` for a stable host-wide IPv4 overview. It includes
 stopped containers, shows one row per Docker network membership, and uses `-`
@@ -267,8 +301,7 @@ Phase 6 migrates the useful v1 host helpers to descriptive v2 commands:
 | `dnet` | `dstack network list` |
 | `dnetinspect NAME` | `dstack network inspect NAME` |
 
-The abbreviated v1 names are not Rust command aliases. Host-wide prune,
-stop-all, and purge helpers remain deferred. Phase 8.1 adds only explicit
+The abbreviated v1 names are not Rust command aliases. Phase 8.1 adds only explicit
 `container remove`, `image inspect`, `image remove`, and `network remove`
 operations alongside the existing targeted volume removal; it does not add a
 generic Docker passthrough or resource creation commands.
@@ -277,9 +310,15 @@ Phase 8.2 adds only read-only system-wide inspection: `inspect --all` for
 containers, images, volumes, and networks, plus `container ip --all`. A named
 inspect still streams Docker's native response directly, while an all-resource
 inspect produces one DStack-owned JSON array. These commands remain host-scoped
-and do not read stack/session/configuration state. Resource-specific prune,
-system maintenance, stop-all, shell completion, and update/installer work are
-not part of this phase.
+and do not read stack/session/configuration state.
+
+Phase 8.3 adds only native resource-specific prune. The v1 `dclean` behavior is
+conceptually `dstack container prune --force`, and `dcleani` is conceptually
+`dstack image prune --force`; no compatibility aliases are added. The broader
+`dcleanall`, `dprunewhat`, `dstackpurge`, and `dstopall` designs remain deferred
+to Phase 8.4. System prune, stop-all, build-cache cleanup, system disk-usage
+inspection, shell completion, manpages, self-update, and installer transition
+are not part of Phase 8.3.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 

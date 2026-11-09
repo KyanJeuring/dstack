@@ -18,6 +18,8 @@ pub enum NetworkCommand {
     Inspect(NetworkInspectArgs),
     /// Remove only the explicitly named Docker networks.
     Remove(NetworkRemoveArgs),
+    /// Remove unused Docker networks selected by Docker.
+    Prune(NetworkPruneArgs),
 }
 
 #[derive(Debug, Args)]
@@ -55,4 +57,20 @@ pub struct NetworkRemoveArgs {
     /// Network names or IDs.
     #[arg(value_name = "NAME", required = true, num_args = 1..)]
     pub names: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct NetworkPruneArgs {
+    /// Forward a Docker prune filter; repeat to preserve order.
+    #[arg(
+        long = "filter",
+        value_name = "FILTER",
+        action = ArgAction::Append,
+        value_parser = nonempty_filter
+    )]
+    pub filters: Vec<String>,
+
+    /// Skip Docker's native confirmation prompt.
+    #[arg(long = "force")]
+    pub force: bool,
 }

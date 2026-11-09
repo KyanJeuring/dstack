@@ -662,7 +662,9 @@ fn targeted_host_lifecycle_commands_require_and_preserve_operands() {
         let images = match arguments.command {
             ImageCommand::Inspect(arguments) => arguments.images,
             ImageCommand::Remove(arguments) => arguments.images,
-            ImageCommand::List(_) => panic!("targeted image command should parse"),
+            ImageCommand::List(_) | ImageCommand::Prune(_) => {
+                panic!("targeted image command should parse")
+            }
         };
         assert_eq!(
             images,
@@ -784,10 +786,201 @@ fn image_volume_and_network_namespaces_parse_only_approved_operations() {
         vec!["dstack", "volume", "inspect"],
         vec!["dstack", "volume", "remove"],
         vec!["dstack", "network", "inspect"],
-        vec!["dstack", "volume", "prune"],
-        vec!["dstack", "network", "prune"],
     ] {
         assert!(Cli::try_parse_from(argv).is_err());
+    }
+}
+
+#[test]
+fn phase8_3_container_and_network_prune_parse_long_options_in_order() {
+    let Some(Command::Container(container)) = Cli::try_parse_from([
+        "dstack",
+        "container",
+        "prune",
+        "--filter",
+        "label=a",
+        "--force",
+        "--filter",
+        "until=24h",
+        "--filter",
+        "label=b",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("container prune should parse");
+    };
+    let ContainerCommand::Prune(arguments) = container.command else {
+        panic!("container prune should parse");
+    };
+    assert_eq!(arguments.filters, ["label=a", "until=24h", "label=b"]);
+    assert!(arguments.force);
+
+    let Some(Command::Network(network)) = Cli::try_parse_from([
+        "dstack",
+        "network",
+        "prune",
+        "--filter",
+        "label=foo=bar",
+        "--filter",
+        "label!=keep",
+        "--force",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("network prune should parse");
+    };
+    let NetworkCommand::Prune(arguments) = network.command else {
+        panic!("network prune should parse");
+    };
+    assert_eq!(arguments.filters, ["label=foo=bar", "label!=keep"]);
+    assert!(arguments.force);
+
+    for argv in [
+        ["dstack", "container", "prune"].as_slice(),
+        ["dstack", "container", "prune", "--force"].as_slice(),
+        ["dstack", "container", "prune", "--filter", "until=24h"].as_slice(),
+        ["dstack", "network", "prune"].as_slice(),
+        ["dstack", "network", "prune", "--force"].as_slice(),
+        ["dstack", "network", "prune", "--filter", "until=24h"].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_ok(), "{argv:?}");
+    }
+}
+
+#[test]
+fn phase8_3_image_and_volume_prune_keep_all_independent_from_force() {
+    for (namespace, expected) in [("image", "image"), ("volume", "volume")] {
+        for (options, all, force, filters) in [
+            (vec![], false, false, vec![]),
+            (vec!["--all"], true, false, vec![]),
+            (vec!["--force"], false, true, vec![]),
+            (vec!["--all", "--force"], true, true, vec![]),
+            (
+                vec![
+                    "--filter",
+                    "label=foo",
+                    "--all",
+                    "--filter",
+                    "until=168h",
+                    "--force",
+                ],
+                true,
+                true,
+                vec!["label=foo", "until=168h"],
+            ),
+        ] {
+            let argv = [vec!["dstack", namespace, "prune"], options].concat();
+            let cli = Cli::try_parse_from(argv).unwrap();
+            match cli.command.unwrap() {
+                Command::Image(image) => {
+                    assert_eq!(expected, "image");
+                    let ImageCommand::Prune(arguments) = image.command else {
+                        panic!("image prune should parse");
+                    };
+                    assert_eq!(arguments.all, all);
+                    assert_eq!(arguments.force, force);
+                    assert_eq!(arguments.filters, filters);
+                }
+                Command::Volume(volume) => {
+                    assert_eq!(expected, "volume");
+                    let VolumeCommand::Prune(arguments) = volume.command else {
+                        panic!("volume prune should parse");
+                    };
+                    assert_eq!(arguments.all, all);
+                    assert_eq!(arguments.force, force);
+                    assert_eq!(arguments.filters, filters);
+                }
+                _ => panic!("resource prune should parse"),
+            }
+        }
+    }
+}
+
+#[test]
+fn phase8_3_prune_rejects_operands_unknown_flags_short_destructive_aliases_and_missing_filters() {
+    for argv in [
+        ["dstack", "container", "prune", "resource-name"].as_slice(),
+        ["dstack", "image", "prune", "image-name"].as_slice(),
+        ["dstack", "volume", "prune", "volume-name"].as_slice(),
+        ["dstack", "network", "prune", "network-name"].as_slice(),
+        ["dstack", "container", "prune", "--all"].as_slice(),
+        ["dstack", "network", "prune", "--all"].as_slice(),
+        ["dstack", "container", "prune", "-f"].as_slice(),
+        ["dstack", "image", "prune", "-f"].as_slice(),
+        ["dstack", "volume", "prune", "-f"].as_slice(),
+        ["dstack", "network", "prune", "-f"].as_slice(),
+        ["dstack", "image", "prune", "-a"].as_slice(),
+        ["dstack", "volume", "prune", "-a"].as_slice(),
+        ["dstack", "container", "prune", "--dry-run"].as_slice(),
+        ["dstack", "image", "prune", "--unknown"].as_slice(),
+        ["dstack", "container", "prune", "--filter"].as_slice(),
+        ["dstack", "image", "prune", "--filter"].as_slice(),
+        ["dstack", "volume", "prune", "--filter", "--force"].as_slice(),
+        ["dstack", "network", "prune", "--filter", ""].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+    }
+}
+
+#[test]
+fn phase8_3_prune_help_preserves_the_safety_distinctions() {
+    let mut command = Cli::command();
+    let checks = [
+        (
+            "container",
+            [
+                "stopped Docker containers",
+                "Skip Docker's native confirmation",
+            ]
+            .as_slice(),
+        ),
+        (
+            "image",
+            [
+                "dangling Docker images by default",
+                "all unused images, not just dangling images",
+                "Skip Docker's native confirmation",
+            ]
+            .as_slice(),
+        ),
+        (
+            "volume",
+            [
+                "unused anonymous local Docker volumes by default",
+                "all unused local volumes, including named volumes",
+                "Skip Docker's native confirmation",
+            ]
+            .as_slice(),
+        ),
+        (
+            "network",
+            [
+                "unused Docker networks",
+                "Skip Docker's native confirmation",
+            ]
+            .as_slice(),
+        ),
+    ];
+    for (namespace, expected) in checks {
+        let prune = command
+            .find_subcommand_mut(namespace)
+            .unwrap()
+            .find_subcommand_mut("prune")
+            .unwrap();
+        let mut help = Vec::new();
+        prune.write_long_help(&mut help).unwrap();
+        let help = String::from_utf8(help).unwrap();
+        for phrase in expected {
+            assert!(help.contains(phrase), "missing {phrase:?} from {help}");
+        }
+        assert!(help.contains("Forward a Docker prune filter"));
+        assert!(
+            !help.contains("-f,"),
+            "short force alias leaked into {help}"
+        );
+        assert!(!help.contains("-a,"), "short all alias leaked into {help}");
     }
 }
 

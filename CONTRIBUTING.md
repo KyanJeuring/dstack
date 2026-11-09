@@ -203,6 +203,39 @@ Do not infer further host commands from that matrix. Phase 8.2 does not add
 resource prune, system maintenance, stop-all, completion generation, manpages,
 or update/installer behavior.
 
+Phase 8.3 adds only resource-specific native Docker prune operations. Container
+and network prune accept repeatable `--filter` and `--force`; image and volume
+also accept an explicit `--all`. Image prune defaults to dangling images, while
+`--all` broadens it to all unused images. Volume prune defaults to unused
+anonymous local volumes, while `--all` also includes unused named volumes.
+Container and network prune have no DStack `--all` because Docker defines no
+separate broader mode for those commands. Destructive options are long-form
+only; do not add `-a` or `-f` prune aliases.
+
+Prune is a streamed mutation. Each handler must construct one deterministic
+`DockerInvocation`, execute it through `ProcessExecutor` with inherited stdin,
+stdout, and stderr, and return `AppOutcome::Child`. Never route prune through
+captured output, the inspect-all workflow, or the silent state-probe policy.
+Docker owns its confirmation input, warning and deletion output, eligibility
+rules, reclaimed-space reporting, and numeric status. `--force` forwards
+Docker's `--force` exactly once; DStack must neither add it implicitly nor add
+a second confirmation layer.
+
+Do not pre-enumerate resources, calculate candidates, or probe whether anything
+qualifies before invoking prune. Those designs race Docker and duplicate daemon
+semantics. Filters are opaque repeated Docker values: preserve their relative
+order without parsing, sorting, merging, deduplicating, or maintaining a local
+filter-key matrix. Phase 8.3 deliberately has no dry-run or preview because the
+resource prune commands share no trustworthy native preview contract.
+
+The prune routes remain pre-bootstrap host commands. Tests must prove exact
+argv, inherited stdio with and without force, one streaming execution and zero
+capture/precheck calls, status and spawn-error behavior, root `--stack`/`--file`
+rejection, malformed-session independence, and no DStack config or registry
+creation. Phase 8.3 does not add system prune, global cleanup, stop-all,
+builder/cache prune, system disk-usage inspection, completion, manpages, or
+update/installer behavior.
+
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
 developer's real v1 or v2 state. The override contains `dstack.conf` and
