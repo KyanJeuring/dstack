@@ -18,6 +18,7 @@ pub mod resolution;
 pub mod session;
 pub mod shell;
 pub mod stack;
+pub mod system;
 pub mod volume;
 
 pub use cli::Cli;

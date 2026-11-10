@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ffi::OsString, io::Write, path::Path};
+use std::{ffi::OsString, io::Write, path::Path};
 
 use serde_json::Value;
 
@@ -10,9 +10,7 @@ use crate::{
 };
 
 use super::{DockerInvocation, DockerOutputError};
-
-/// Keeps even maximum-length Docker resource names within a conservative argv bound.
-pub(crate) const INSPECT_BATCH_SIZE: usize = 64;
+use super::{TARGET_BATCH_SIZE, parse_identifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InspectResource {
@@ -76,7 +74,7 @@ pub(crate) fn inspect_all(
 
     let identifiers = parse_identifiers(resource.command(), &enumeration.stdout)?;
     let mut objects = Vec::new();
-    for batch in identifiers.chunks(INSPECT_BATCH_SIZE) {
+    for batch in identifiers.chunks(TARGET_BATCH_SIZE) {
         let args = resource
             .inspect_prefix()
             .into_iter()
@@ -117,35 +115,6 @@ pub(crate) fn write_inspect_json(
     }
 }
 
-fn parse_identifiers(
-    command: &'static str,
-    output: &[u8],
-) -> Result<Vec<String>, DockerOutputError> {
-    let output = std::str::from_utf8(output)
-        .map_err(|source| DockerOutputError::InvalidUtf8 { command, source })?;
-    let mut seen = HashSet::new();
-    let mut identifiers = Vec::new();
-    for (index, line) in output.split('\n').enumerate() {
-        let identifier = line.strip_suffix('\r').unwrap_or(line);
-        if identifier.is_empty() {
-            continue;
-        }
-        if identifier
-            .chars()
-            .any(|character| character.is_whitespace() || character.is_control())
-        {
-            return Err(DockerOutputError::InvalidIdentifier {
-                command,
-                line: index + 1,
-            });
-        }
-        if seen.insert(identifier.to_owned()) {
-            identifiers.push(identifier.to_owned());
-        }
-    }
-    Ok(identifiers)
-}
-
 fn os(values: &[&str]) -> Vec<OsString> {
     values.iter().map(OsString::from).collect()
 }
@@ -156,12 +125,10 @@ mod tests {
 
     use serde_json::{Value, json};
 
-    use super::{
-        INSPECT_BATCH_SIZE, InspectAllResult, InspectResource, inspect_all, parse_identifiers,
-        write_inspect_json,
-    };
+    use super::{InspectAllResult, InspectResource, inspect_all, write_inspect_json};
     use crate::{
         AppError, AppOutcome,
+        docker::TARGET_BATCH_SIZE,
         output::{ColorPolicy, Output},
         process::{CapturePolicy, ProcessStatus, testing::RecordingExecutor},
     };
@@ -197,38 +164,6 @@ mod tests {
             );
             assert_eq!(request.process.current_dir, cwd());
             assert_eq!(request.policy, CapturePolicy::StdoutWithInheritedStderr);
-        }
-    }
-
-    #[test]
-    fn identifiers_accept_crlf_final_lines_and_punctuation_and_deduplicate_in_order() {
-        assert_eq!(
-            parse_identifiers(
-                "test",
-                b"sha256:aaa\r\nname.with_punctuation-1\r\nsha256:aaa\r\nlast"
-            )
-            .unwrap(),
-            ["sha256:aaa", "name.with_punctuation-1", "last"]
-        );
-        assert!(parse_identifiers("test", b"\n\r\n").unwrap().is_empty());
-    }
-
-    #[test]
-    fn identifiers_reject_invalid_utf8_and_non_line_identifier_whitespace() {
-        assert!(matches!(
-            parse_identifiers("test", &[0xff]),
-            Err(crate::docker::DockerOutputError::InvalidUtf8 { .. })
-        ));
-        for output in [
-            b"bad id\n".as_slice(),
-            b"bad\tid\n",
-            b"bad\rid\n",
-            b"bad\0id\n",
-        ] {
-            assert!(matches!(
-                parse_identifiers("test", output),
-                Err(crate::docker::DockerOutputError::InvalidIdentifier { .. })
-            ));
         }
     }
 
@@ -313,12 +248,12 @@ mod tests {
 
     #[test]
     fn inspection_is_bounded_and_aggregates_batches_in_target_order() {
-        let identifiers = (0..INSPECT_BATCH_SIZE + 3)
+        let identifiers = (0..TARGET_BATCH_SIZE + 3)
             .map(|index| format!("id{index:03}"))
             .collect::<Vec<_>>();
         let executor = RecordingExecutor::default();
         executor.push_capture(format!("{}\n", identifiers.join("\n")), 0);
-        for batch in identifiers.chunks(INSPECT_BATCH_SIZE) {
+        for batch in identifiers.chunks(TARGET_BATCH_SIZE) {
             executor.push_capture(
                 serde_json::to_vec(
                     &batch
@@ -337,11 +272,11 @@ mod tests {
             panic!("inspection should complete");
         };
         assert_eq!(result.identifiers, identifiers);
-        assert_eq!(result.objects.len(), INSPECT_BATCH_SIZE + 3);
+        assert_eq!(result.objects.len(), TARGET_BATCH_SIZE + 3);
         let requests = executor.capture_requests();
         assert_eq!(requests.len(), 3);
         for request in &requests[1..] {
-            assert!(request.process.args.len() - 2 <= INSPECT_BATCH_SIZE);
+            assert!(request.process.args.len() - 2 <= TARGET_BATCH_SIZE);
         }
         assert_eq!(
             result
@@ -404,7 +339,7 @@ mod tests {
 
     #[test]
     fn inspect_failure_stops_remaining_batches_and_emits_no_partial_json() {
-        let identifiers = (0..(INSPECT_BATCH_SIZE * 2) + 1)
+        let identifiers = (0..(TARGET_BATCH_SIZE * 2) + 1)
             .map(|index| format!("id{index}"))
             .collect::<Vec<_>>();
         let executor = RecordingExecutor::default();

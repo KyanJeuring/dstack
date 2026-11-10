@@ -164,6 +164,7 @@ where
             executor,
             executor,
             stdout,
+            stderr,
         );
     }
     let runtime = bootstrap::run(paths, stderr)?;
@@ -202,3 +203,6 @@ mod phase8_2_tests;
 
 #[cfg(test)]
 mod phase8_3_tests;
+
+#[cfg(test)]
+mod phase8_4_tests;

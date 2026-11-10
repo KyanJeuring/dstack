@@ -236,6 +236,54 @@ creation. Phase 8.3 does not add system prune, global cleanup, stop-all,
 builder/cache prune, system disk-usage inspection, completion, manpages, or
 update/installer behavior.
 
+Phase 8.4 adds the focused host-scoped `system` namespace with only `df` and
+`prune`, plus graceful `container stop`. `system df [--verbose]` is a direct
+inherited-stdio Docker disk-usage view. DStack does not parse it, expose
+`--format`, label it as a prune preview, or add output around it. Docker system
+prune has no native dry-run, so do not recreate v1 `dprunewhat` with a heuristic
+candidate calculation.
+
+`system prune` is one streamed native Docker operation with independent
+long-form `--all`, `--volumes`, repeatable `--filter`, and `--force` options.
+Default Docker scope includes stopped containers, unused networks, dangling
+images, and unused build cache. `--all` broadens image cleanup only;
+`--volumes` includes unused anonymous volumes and must never be described as
+all unused named volumes. The existing `volume prune --all` remains the
+separate explicit named-volume-capable operation. Docker owns confirmation,
+eligibility, output, and child status. Do not pre-enumerate, chain
+resource-specific prune, add a DStack prompt, or add builder/cache commands.
+
+Named `container stop CONTAINER...` streams exact operands directly to Docker
+without a state probe. `container stop --all` first captures only active IDs
+using `docker container ls --quiet --no-trunc`, parses and deduplicates them with
+the shared line-oriented identifier machinery, and stops the snapshot in the
+shared conservative batches of at most 64. Enumeration diagnostics remain
+visible. Empty enumeration returns success with one styled stderr information
+message and no zero-operand stop. Stop batches inherit all streams, run in
+order, and halt at the first numeric or typed process failure. Earlier batches
+are not rolled back, and no retry hides the unavoidable enumerate/stop race.
+Never implement this workflow with a shell, `xargs`, confirmation, force/kill,
+or timeout/signal options.
+
+All Phase 8.4 routes execute before configuration bootstrap and ignore
+registry, discovery, Compose context, and malformed or future `DSTACK_SESSION`.
+Root `--stack` and `--file` remain invalid. The active Docker CLI context and
+environment remain authoritative. Tests must cover exact argv, inherited stdio,
+ordered filters, option independence, status/spawn errors, active-only
+enumeration, LF/CRLF and malformed identifiers, ordered deduplication, batching,
+empty success, first-failure stopping, no shell/prompt, root-option rejection,
+session independence, and absence of config files.
+
+The v1 maintenance audit is final for this phase: `dstopall` maps to `container
+stop --all`; `dclean` and `dcleani` remain mapped to Phase 8.3 container/image
+prune with `--force`; and `dcleanall` maps to `system prune --all`, with
+`--force` only by explicit user choice. `dprunewhat` has no direct replacement.
+Do not port `dstackpurge`: selected-stack `down --volumes` and host-wide system
+prune stay separate commands so one operation cannot unexpectedly cross scope
+or mask the other's failure. Add no v1 aliases, generic purge/cleanup command,
+mixed stack-and-host wrapper, completion, manpage, update, installer, session,
+shell, or Compose-lifecycle work as part of Phase 8.4.
+
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
 developer's real v1 or v2 state. The override contains `dstack.conf` and

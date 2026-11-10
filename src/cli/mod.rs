@@ -12,6 +12,7 @@ mod registry;
 mod service_command;
 mod session;
 mod shell;
+mod system;
 mod volume;
 
 use std::{ffi::OsString, path::PathBuf};
@@ -23,6 +24,7 @@ pub use config::{ConfigArgs, ConfigCommand};
 pub use container::{
     ContainerArgs, ContainerCommand, ContainerInspectArgs, ContainerIpArgs, ContainerListArgs,
     ContainerPortsArgs, ContainerPruneArgs, ContainerRemoveArgs, ContainerStatsArgs,
+    ContainerStopArgs,
 };
 pub use context::{ContextArgs, ContextCommand, ContextOptions};
 pub use image::{
@@ -39,6 +41,7 @@ pub use registry::{RegistryArgs, RegistryCommand};
 pub use service_command::{ExecArgs, RunArgs};
 pub use session::UseArgs;
 pub use shell::{ShellActivateArgs, ShellArgs, ShellCommand, ShellManageArgs, ShellStatusArgs};
+pub use system::{SystemArgs, SystemCommand, SystemDfArgs, SystemPruneArgs};
 pub use volume::{
     VolumeArgs, VolumeCommand, VolumeInspectArgs, VolumeListArgs, VolumeNamesArgs, VolumePruneArgs,
 };
@@ -69,7 +72,7 @@ pub enum Command {
     List,
     /// Run raw Docker Compose arguments against the resolved stack.
     Compose(ComposeArgs),
-    /// Inspect, explicitly remove, or prune host-scoped Docker containers.
+    /// Inspect, gracefully stop, explicitly remove, or prune host-scoped Docker containers.
     Container(ContainerArgs),
     /// Inspect, explicitly remove, or prune host-scoped Docker images.
     Image(ImageArgs),
@@ -77,6 +80,8 @@ pub enum Command {
     Volume(VolumeArgs),
     /// Inspect, explicitly remove, or prune host-scoped Docker networks.
     Network(NetworkArgs),
+    /// Inspect Docker disk usage or prune unused host-wide Docker data.
+    System(SystemArgs),
     /// Create and start services in detached, build-aware mode.
     Up(UpArgs),
     /// Start existing service containers.
@@ -174,7 +179,7 @@ fn find_host_command(arguments: &[OsString]) -> Option<usize> {
         let argument = &arguments[index];
         if matches!(
             argument.to_str(),
-            Some("container" | "image" | "volume" | "network")
+            Some("container" | "image" | "volume" | "network" | "system")
         ) {
             return Some(index);
         }

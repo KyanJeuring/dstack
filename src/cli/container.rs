@@ -24,6 +24,8 @@ pub enum ContainerCommand {
     Inspect(ContainerInspectArgs),
     /// Remove only the explicitly named Docker containers.
     Remove(ContainerRemoveArgs),
+    /// Gracefully stop explicitly named containers or every running container.
+    Stop(ContainerStopArgs),
     /// Remove stopped Docker containers selected by Docker.
     Prune(ContainerPruneArgs),
 }
@@ -109,6 +111,26 @@ pub struct ContainerRemoveArgs {
     /// Container names or IDs.
     #[arg(value_name = "CONTAINER", required = true, num_args = 1..)]
     pub containers: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct ContainerStopArgs {
+    /// Container names or IDs.
+    #[arg(
+        value_name = "CONTAINER",
+        num_args = 1..,
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
+    pub containers: Vec<OsString>,
+
+    /// Stop every container currently running on the active Docker daemon/context.
+    #[arg(
+        long,
+        required_unless_present = "containers",
+        conflicts_with = "containers"
+    )]
+    pub all: bool,
 }
 
 #[derive(Debug, Args)]

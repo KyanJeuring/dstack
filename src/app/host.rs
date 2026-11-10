@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::{
-    cli::{Command, ContainerCommand, ImageCommand, NetworkCommand, VolumeCommand},
+    cli::{Command, ContainerCommand, ImageCommand, NetworkCommand, SystemCommand, VolumeCommand},
     container::commands as container_commands,
     error::AppError,
     image::commands as image_commands,
@@ -9,13 +9,18 @@ use crate::{
     outcome::AppOutcome,
     output::Output,
     process::{ProcessExecutor, ProcessOutputExecutor},
+    system::commands as system_commands,
     volume::commands as volume_commands,
 };
 
 pub(super) fn is_host_scoped(command: &Command) -> bool {
     matches!(
         command,
-        Command::Container(_) | Command::Image(_) | Command::Volume(_) | Command::Network(_)
+        Command::Container(_)
+            | Command::Image(_)
+            | Command::Volume(_)
+            | Command::Network(_)
+            | Command::System(_)
     )
 }
 
@@ -25,6 +30,7 @@ pub(super) fn run(
     stream_executor: &dyn ProcessExecutor,
     capture_executor: &dyn ProcessOutputExecutor,
     stdout: &mut Output<'_>,
+    stderr: &mut Output<'_>,
 ) -> Result<AppOutcome, AppError> {
     match command {
         Command::Container(arguments) => match arguments.command {
@@ -68,6 +74,14 @@ pub(super) fn run(
             ContainerCommand::Remove(arguments) => {
                 container_commands::remove::run(arguments.containers, current_dir, stream_executor)
             }
+            ContainerCommand::Stop(arguments) => container_commands::stop::run(
+                arguments.all,
+                arguments.containers,
+                current_dir,
+                stream_executor,
+                capture_executor,
+                stderr,
+            ),
             ContainerCommand::Prune(arguments) => container_commands::prune::run(
                 arguments.filters,
                 arguments.force,
@@ -144,6 +158,19 @@ pub(super) fn run(
                 network_commands::remove::run(arguments.names, current_dir, stream_executor)
             }
             NetworkCommand::Prune(arguments) => network_commands::prune::run(
+                arguments.filters,
+                arguments.force,
+                current_dir,
+                stream_executor,
+            ),
+        },
+        Command::System(arguments) => match arguments.command {
+            SystemCommand::Df(arguments) => {
+                system_commands::df::run(arguments.verbose, current_dir, stream_executor)
+            }
+            SystemCommand::Prune(arguments) => system_commands::prune::run(
+                arguments.all,
+                arguments.volumes,
                 arguments.filters,
                 arguments.force,
                 current_dir,

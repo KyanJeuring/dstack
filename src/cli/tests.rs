@@ -4,7 +4,7 @@ use clap::CommandFactory;
 
 use super::{
     Cli, Command, ContainerCommand, ContextCommand, ImageCommand, MigrationCommand, NetworkCommand,
-    RegistryCommand, ShellCommand, VolumeCommand,
+    RegistryCommand, ShellCommand, SystemCommand, VolumeCommand,
 };
 
 #[test]
@@ -706,6 +706,22 @@ fn host_stack_options_after_the_namespace_are_normalized_for_clear_rejection() {
         Cli::try_parse_from(["dstack", "container", "list", "--file", "compose.yaml"]).unwrap();
     assert_eq!(cli.files, [PathBuf::from("compose.yaml")]);
 
+    let cli = Cli::try_parse_from(["dstack", "system", "prune", "--stack", "jellyfin"]).unwrap();
+    assert_eq!(cli.stack.as_deref(), Some("jellyfin"));
+    assert!(matches!(cli.command, Some(Command::System(_))));
+
+    let cli = Cli::try_parse_from([
+        "dstack",
+        "container",
+        "stop",
+        "web",
+        "--file",
+        "compose.yaml",
+    ])
+    .unwrap();
+    assert_eq!(cli.files, [PathBuf::from("compose.yaml")]);
+    assert!(matches!(cli.command, Some(Command::Container(_))));
+
     let cli = Cli::try_parse_from(["dstack", "-s", "container", "up"]).unwrap();
     assert_eq!(cli.stack.as_deref(), Some("container"));
     assert!(matches!(cli.command, Some(Command::Up(_))));
@@ -981,6 +997,203 @@ fn phase8_3_prune_help_preserves_the_safety_distinctions() {
             "short force alias leaked into {help}"
         );
         assert!(!help.contains("-a,"), "short all alias leaked into {help}");
+    }
+}
+
+#[test]
+fn phase8_4_system_namespace_parses_only_df_and_prune() {
+    for (argv, verbose) in [
+        (["dstack", "system", "df"].as_slice(), false),
+        (["dstack", "system", "df", "--verbose"].as_slice(), true),
+    ] {
+        let Some(Command::System(system)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("system command should parse");
+        };
+        let SystemCommand::Df(arguments) = system.command else {
+            panic!("system df should parse");
+        };
+        assert_eq!(arguments.verbose, verbose);
+    }
+
+    for argv in [
+        ["dstack", "system"].as_slice(),
+        ["dstack", "system", "df", "foo"].as_slice(),
+        ["dstack", "system", "df", "--all"].as_slice(),
+        ["dstack", "system", "df", "--force"].as_slice(),
+        ["dstack", "system", "df", "-v"].as_slice(),
+        ["dstack", "system", "df", "--format", "json"].as_slice(),
+        ["dstack", "system", "prune", "foo"].as_slice(),
+        ["dstack", "system", "prune", "-a"].as_slice(),
+        ["dstack", "system", "prune", "-f"].as_slice(),
+        ["dstack", "system", "prune", "--dry-run"].as_slice(),
+        ["dstack", "system", "prune", "--preview"].as_slice(),
+        ["dstack", "system", "prune", "--what-if"].as_slice(),
+        ["dstack", "system", "prune", "--show"].as_slice(),
+        ["dstack", "system", "prune", "--all-volumes"].as_slice(),
+        ["dstack", "system", "prune", "--named-volumes"].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+    }
+}
+
+#[test]
+fn phase8_4_system_prune_keeps_options_independent_and_filters_ordered() {
+    for (options, all, volumes, force, filters) in [
+        (vec![], false, false, false, vec![]),
+        (vec!["--all"], true, false, false, vec![]),
+        (vec!["--volumes"], false, true, false, vec![]),
+        (vec!["--force"], false, false, true, vec![]),
+        (
+            vec![
+                "--filter",
+                "label=a",
+                "--all",
+                "--filter",
+                "until=24h",
+                "--volumes",
+                "--filter",
+                "label=b",
+                "--force",
+            ],
+            true,
+            true,
+            true,
+            vec!["label=a", "until=24h", "label=b"],
+        ),
+    ] {
+        let argv = [vec!["dstack", "system", "prune"], options].concat();
+        let Some(Command::System(system)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("system command should parse");
+        };
+        let SystemCommand::Prune(arguments) = system.command else {
+            panic!("system prune should parse");
+        };
+        assert_eq!(arguments.all, all);
+        assert_eq!(arguments.volumes, volumes);
+        assert_eq!(arguments.force, force);
+        assert_eq!(arguments.filters, filters);
+    }
+}
+
+#[test]
+fn phase8_4_system_help_preserves_scope_and_confirmation_distinctions() {
+    let mut command = Cli::command();
+    let system = command.find_subcommand_mut("system").unwrap();
+
+    let mut df_help = Vec::new();
+    system
+        .find_subcommand_mut("df")
+        .unwrap()
+        .write_long_help(&mut df_help)
+        .unwrap();
+    let df_help = String::from_utf8(df_help).unwrap();
+    assert!(df_help.contains("Docker daemon disk usage"));
+    assert!(df_help.contains("--verbose"));
+    assert!(!df_help.contains("--format"));
+
+    let mut prune_help = Vec::new();
+    system
+        .find_subcommand_mut("prune")
+        .unwrap()
+        .write_long_help(&mut prune_help)
+        .unwrap();
+    let prune_help = String::from_utf8(prune_help).unwrap();
+    for phrase in [
+        "stopped containers",
+        "unused networks",
+        "dangling images",
+        "unused build cache",
+        "Docker owns the confirmation prompt",
+        "all unused images",
+        "unused anonymous volumes",
+        "not all unused named volumes",
+        "dstack volume prune --all",
+    ] {
+        assert!(
+            prune_help.contains(phrase),
+            "missing {phrase:?} from {prune_help}"
+        );
+    }
+    assert!(!prune_help.contains("-a,"));
+    assert!(!prune_help.contains("-f,"));
+    assert!(!prune_help.contains("dry-run"));
+}
+
+#[test]
+fn phase8_4_container_stop_requires_names_or_explicit_all() {
+    for (argv, all, expected) in [
+        (
+            vec!["dstack", "container", "stop", "web"],
+            false,
+            vec!["web"],
+        ),
+        (
+            vec!["dstack", "container", "stop", "web", "db"],
+            false,
+            vec!["web", "db"],
+        ),
+        (vec!["dstack", "container", "stop", "--all"], true, vec![]),
+    ] {
+        let Some(Command::Container(container)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("container command should parse");
+        };
+        let ContainerCommand::Stop(arguments) = container.command else {
+            panic!("container stop should parse");
+        };
+        assert_eq!(arguments.all, all);
+        assert_eq!(
+            arguments.containers,
+            expected.into_iter().map(OsString::from).collect::<Vec<_>>()
+        );
+    }
+
+    for argv in [
+        ["dstack", "container", "stop"].as_slice(),
+        ["dstack", "container", "stop", "--all", "web"].as_slice(),
+        ["dstack", "container", "stop", "-a"].as_slice(),
+        ["dstack", "container", "stop", "--force"].as_slice(),
+        ["dstack", "container", "stop", "--timeout", "10"].as_slice(),
+        ["dstack", "container", "stop", "--signal", "SIGTERM"].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+    }
+}
+
+#[test]
+fn phase8_4_does_not_add_legacy_or_generic_maintenance_aliases() {
+    for command in [
+        "dstopall",
+        "stopall",
+        "stop-all",
+        "dclean",
+        "dcleani",
+        "dcleanall",
+        "cleanall",
+        "cleanup-all",
+        "dprunewhat",
+        "dstackpurge",
+        "purge",
+        "cleanup",
+        "clean",
+    ] {
+        assert!(
+            Cli::try_parse_from(["dstack", command]).is_err(),
+            "{command}"
+        );
+    }
+    for argv in [
+        ["dstack", "system", "purge"].as_slice(),
+        ["dstack", "system", "info"].as_slice(),
+        ["dstack", "system", "events"].as_slice(),
+        ["dstack", "system", "inspect"].as_slice(),
+        ["dstack", "system", "stop"].as_slice(),
+        ["dstack", "system", "kill"].as_slice(),
+        ["dstack", "system", "cleanup"].as_slice(),
+        ["dstack", "system", "reset"].as_slice(),
+        ["dstack", "container", "kill", "--all"].as_slice(),
+        ["dstack", "builder", "prune"].as_slice(),
+    ] {
+        assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
     }
 }
 

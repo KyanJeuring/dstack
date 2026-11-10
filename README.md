@@ -47,6 +47,8 @@ dstack container stats [-a|--all] [--no-stream] [CONTAINER...]
 dstack container inspect CONTAINER...
 dstack container inspect --all
 dstack container remove CONTAINER...
+dstack container stop CONTAINER...
+dstack container stop --all
 dstack container prune [--filter FILTER]... [--force]
 dstack image list [-a|--all] [-f|--filter FILTER]...
 dstack image inspect IMAGE...
@@ -63,6 +65,8 @@ dstack network inspect NAME...
 dstack network inspect --all
 dstack network remove NAME...
 dstack network prune [--filter FILTER]... [--force]
+dstack system df [--verbose]
+dstack system prune [--all] [--volumes] [--filter FILTER]... [--force]
 ```
 
 The first stack, configuration, registry, or migration operation creates
@@ -106,14 +110,16 @@ boundary form `dstack exec SERVICE -- COMMAND...`. Likewise,
 always uses `--rm`. These operations inherit terminal streams; DStack never
 joins, quotes, or evaluates command arguments through a host shell.
 
-The `container`, `image`, `volume`, and `network` namespaces are host-scoped.
+The `container`, `image`, `volume`, `network`, and `system` namespaces are
+host-scoped.
 They call the installed `docker` CLI directly and never resolve a DStack
 project, registry entry, Compose file, or `ResolvedContext`. Consequently,
 `--stack` and `--file` are errors for every command in these namespaces.
 Metadata list operations request machine-oriented Docker rows, validate them,
 and render aligned DStack tables. Docker stderr remains inherited. Live stats,
-explicitly named inspect JSON, one-container port lookup, and explicit resource
-removal remain Docker-owned streaming output. `inspect --all` is deliberately
+system disk usage, system prune, explicitly named inspect JSON, one-container
+port lookup, explicit resource removal, and explicitly named container stop
+remain Docker-owned streaming output. `inspect --all` is deliberately
 explicit: it enumerates every resource of that type and emits one JSON array,
 including `[]` when the daemon reports none. Explicit removals never add force,
 stop, disconnect, volume-removal, or prune behavior. No v2 host command invokes
@@ -148,6 +154,55 @@ dstack image prune --all --filter until=168h --force
 Prune inherits stdin, stdout, and stderr. This lets Docker own its confirmation,
 warnings, deleted-resource list, reclaimed-space output, and exit status. DStack
 does not expose short destructive `-a` or `-f` aliases for prune.
+
+### System maintenance and graceful container stop
+
+`dstack system df` streams Docker's standard human-readable daemon disk-usage
+view without parsing, headers, or DStack status messages. Add `--verbose` for
+Docker's detailed view. This is useful before or after maintenance, but it is
+**not a prune preview** and does not claim to show exactly what a later prune
+will delete. Phase 8.4 deliberately exposes neither Docker's `--format` option
+nor a DStack dry-run approximation.
+
+`dstack system prune` delegates one native broad cleanup request directly to
+Docker. DStack does not enumerate candidates, chain resource-specific prune
+commands, or add a second prompt. Docker owns confirmation unless the user
+explicitly supplies long-form `--force`; stdin, stdout, stderr, and Docker's
+numeric status remain native. Repeatable `--filter` values are opaque and stay
+in user order.
+
+| Command | Effect |
+|---|---|
+| `dstack system prune` | Stopped containers, unused networks, dangling images, and unused build cache |
+| `dstack system prune --all` | Additionally broadens image cleanup to all unused images |
+| `dstack system prune --volumes` | Additionally prunes unused anonymous volumes |
+| `dstack volume prune --all` | Separate command for all unused local volumes, including named volumes |
+
+The flags are independent: `--all` does not imply `--volumes` or `--force`, and
+`--volumes` does not imply `--all`. Even `system prune --all --volumes` does
+not include all unused named volumes. System prune always includes Docker's
+unused build-cache cleanup; no separate builder/cache namespace is added.
+
+`dstack container stop web db` becomes the exact native command `docker
+container stop web db`; DStack does not pre-inspect explicit targets or expose
+force, signal, or timeout options. Docker applies each container's configured
+graceful-stop behavior.
+
+`dstack container stop --all` is deliberately host-wide: it stops every
+currently running container visible to the active Docker daemon/context,
+including containers unrelated to DStack. DStack enumerates running container
+IDs with machine-readable Docker output, removes duplicate IDs in first-seen
+order, then streams `docker container stop` in batches of at most 64 targets.
+It does not enumerate already stopped containers, invoke a shell or `xargs`, or
+prompt. If no containers are running it reports that fact on stderr and returns
+success without an empty Docker stop invocation.
+
+Stop-all uses snapshot semantics. Containers can exit, appear, disappear, or
+restart between enumeration and stopping; a container started after the
+snapshot is outside the captured target set. DStack does not retry. Batches run
+in order and stop at the first Docker failure, whose status and diagnostics are
+preserved. Earlier successful batches remain stopped, so a multi-batch host
+mutation cannot be atomic.
 
 Use `container ip --all` for a stable host-wide IPv4 overview. It includes
 stopped containers, shows one row per Docker network membership, and uses `-`
@@ -281,7 +336,8 @@ and never falls back to cwd. Use `dstack unset` or select the stack again.
 
 The legacy v1 `DSTACK` and `DSTACK_COMPOSE_FILE` variables are not v2 session
 state and are ignored by the Rust runtime. Host-scoped `container`, `image`,
-`volume`, and `network` commands also ignore `DSTACK_SESSION` completely.
+`volume`, `network`, and `system` commands also ignore `DSTACK_SESSION`
+completely.
 
 Phase 6 migrates the useful v1 host helpers to descriptive v2 commands:
 
@@ -312,13 +368,34 @@ inspect still streams Docker's native response directly, while an all-resource
 inspect produces one DStack-owned JSON array. These commands remain host-scoped
 and do not read stack/session/configuration state.
 
-Phase 8.3 adds only native resource-specific prune. The v1 `dclean` behavior is
-conceptually `dstack container prune --force`, and `dcleani` is conceptually
-`dstack image prune --force`; no compatibility aliases are added. The broader
-`dcleanall`, `dprunewhat`, `dstackpurge`, and `dstopall` designs remain deferred
-to Phase 8.4. System prune, stop-all, build-cache cleanup, system disk-usage
-inspection, shell completion, manpages, self-update, and installer transition
-are not part of Phase 8.3.
+Phase 8.3 adds native resource-specific prune. Phase 8.4 completes the explicit
+v2 maintenance redesign without preserving abbreviated aliases:
+
+| V1 helper | V2 decision |
+|---|---|
+| `dstopall` | `dstack container stop --all`; structured active-container enumeration, bounded batches, visible diagnostics, and real failure status replace the masked `docker ps -q \| xargs docker stop` pipeline |
+| `dclean` | `dstack container prune --force` (Phase 8.3) |
+| `dcleani` | `dstack image prune --force` (Phase 8.3) |
+| `dcleanall` | `dstack system prune --all`; add `--force` only when intentionally skipping Docker's native confirmation |
+| `dprunewhat` | No direct replacement because Docker system prune has no native dry-run; `dstack system df` is disk usage, not a prune preview |
+| `dstackpurge` | No combined replacement; keep stack destruction and host cleanup separate |
+
+For the broad effects formerly combined by `dstackpurge`, explicitly run:
+
+```text
+dstack -s STACK down --volumes
+dstack system prune
+```
+
+Add `--force` to the second command only when deliberately suppressing Docker's
+prompt. DStack does not automatically cross from one selected Compose stack
+into whole-host cleanup, and each separate operation keeps its own failure
+status. This intentionally replaces v1's combined confirmation and masked
+`down -v`/forced-prune failures. There is no `purge`, `clean`, `stop-all`, or
+other compatibility alias.
+
+Phase 8.4 adds no completion, manpages, self-update, installer transition, or
+Compose/session redesign.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
