@@ -248,6 +248,10 @@ fn run_uninstall_with_query(
                     output,
                     "\nThe currently running shell may still have the adapter loaded."
                 )?;
+                writeln!(
+                    output,
+                    "Its DStack completion registration may also remain loaded."
+                )?;
                 writeln!(output, "Open a new terminal or reload/restart the shell.")?;
             }
         }

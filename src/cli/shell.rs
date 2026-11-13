@@ -12,7 +12,7 @@ pub struct ShellArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ShellCommand {
-    /// Install DStack integration in a shell profile.
+    /// Install DStack terminal integration and static completion in a shell profile.
     Install(ShellManageArgs),
 
     /// Inspect profile installation and current-adapter state.
@@ -32,6 +32,12 @@ pub enum ShellCommand {
 
     #[command(name = "__clear", hide = true)]
     Clear {
+        #[arg(value_enum, value_name = "SHELL")]
+        shell: ShellKind,
+    },
+
+    #[command(name = "__completions", hide = true)]
+    Completions {
         #[arg(value_enum, value_name = "SHELL")]
         shell: ShellKind,
     },

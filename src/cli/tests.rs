@@ -1262,9 +1262,20 @@ fn session_and_shell_commands_have_explicit_typed_grammar() {
             command: ShellCommand::Init { .. }
         }))
     ));
+    assert!(matches!(
+        Cli::try_parse_from(["dstack", "shell", "__completions", "powershell"])
+            .unwrap()
+            .command,
+        Some(Command::Shell(super::ShellArgs {
+            command: ShellCommand::Completions { .. }
+        }))
+    ));
     assert!(Cli::try_parse_from(["dstack", "jellyfin"]).is_err());
     assert!(Cli::try_parse_from(["dstack", "use", "jellyfin", "compose.yaml"]).is_err());
     assert!(Cli::try_parse_from(["dstack", "shell", "init"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "shell", "__completions"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "shell", "__completions", "elvish"]).is_err());
+    assert!(Cli::try_parse_from(["dstack", "shell", "__completions", "nushell"]).is_err());
     let unknown =
         Cli::try_parse_from(["dstack", "shell", "install", "--shell", "cmd"]).unwrap_err();
     let diagnostic = unknown.to_string();
@@ -1287,4 +1298,5 @@ fn internal_shell_protocol_is_hidden_from_normal_help() {
     assert!(!help.contains("__init"));
     assert!(!help.contains("__activate"));
     assert!(!help.contains("__clear"));
+    assert!(!help.contains("__completions"));
 }

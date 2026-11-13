@@ -1,4 +1,4 @@
-use super::ShellKind;
+use super::{ShellKind, completion_script};
 
 const BASH: &str = r#"dstack() {
   local __dstack_arg __dstack_mutation __dstack_status
@@ -124,11 +124,33 @@ function global:dstack {
   $global:LASTEXITCODE = $nativeStatus
 }"#;
 
-pub fn init_script(shell: ShellKind) -> &'static str {
+fn adapter_script(shell: ShellKind) -> &'static str {
     match shell {
         ShellKind::Bash => BASH,
         ShellKind::Zsh => ZSH,
         ShellKind::Fish => FISH,
         ShellKind::Powershell => POWERSHELL,
+    }
+}
+
+pub fn init_script(shell: ShellKind) -> String {
+    let adapter = adapter_script(shell);
+    let completion = completion_script(shell);
+    match shell {
+        ShellKind::Zsh => format!(
+            r#"{adapter}
+
+if (( ! $+functions[compdef] )); then
+  autoload -Uz compinit
+  compinit
+fi
+
+if (( $+functions[compdef] )); then
+{completion}fi
+"#
+        ),
+        ShellKind::Bash | ShellKind::Fish | ShellKind::Powershell => {
+            format!("{adapter}\n\n{completion}")
+        }
     }
 }

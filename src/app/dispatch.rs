@@ -130,7 +130,8 @@ pub(crate) fn run(
             | ShellCommand::Status(_)
             | ShellCommand::Uninstall(_)
             | ShellCommand::Init { .. }
-            | ShellCommand::Clear { .. } => {
+            | ShellCommand::Clear { .. }
+            | ShellCommand::Completions { .. } => {
                 unreachable!("early shell command was routed after bootstrap")
             }
         },

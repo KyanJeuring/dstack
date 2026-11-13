@@ -284,6 +284,47 @@ or mask the other's failure. Add no v1 aliases, generic purge/cleanup command,
 mixed stack-and-host wrapper, completion, manpage, update, installer, session,
 shell, or Compose-lifecycle work as part of Phase 8.4.
 
+Phase 8.5 adds static shell completion inside the existing Phase 7 shell
+feature. `clap_complete` 4.6's stable AOT API renders Bash, Zsh, Fish, and
+PowerShell definitions from `Cli::command()`; `Cli` remains the only
+command/subcommand/option model. `ShellKind` maps internally to exactly those
+four generators. Because the AOT generators do not consistently omit hidden
+commands, completion generation builds a generic visible-only projection of
+the Clap tree rather than maintaining a second DStack command list. Clap's
+`string` feature permits that projection to retain owned metadata; it does not
+introduce another dependency or command definition.
+
+Hidden `shell __completions SHELL` writes only the generated completion source.
+It and `shell __init SHELL` route at the existing early boundary, before config
+bootstrap, registry/discovery/session parsing, Compose resolution, or any Docker
+process. `__init` directly composes the existing session adapter with the same
+Rust completion renderer; it must never spawn `__completions` recursively.
+Adapter source comes first so optional completion setup cannot erase session
+mutation behavior.
+
+Do not change `manual_loader` or `managed_block` for completion. Both already
+call `__init`, so current managed and canonical manual profiles stay current
+byte-for-byte and automatically receive the new payload after a profile reload.
+No completion sidecar file, package asset, profile schema, migration command,
+or separately persisted status exists. Install/status/uninstall continue to
+own only the marked loader block; an already-loaded wrapper and completion can
+remain in the current shell until reload or restart.
+
+Zsh initialization checks for `compdef` and runs ordinary `compinit` only when
+the standard completion system is absent. Never use security-bypassing compinit
+flags. The wrapper must already exist if completion initialization fails.
+PowerShell keeps the global wrapper and uses the stock Clap native argument
+completer, which is verified through `TabExpansion2` after the function shadows
+the application. Clap's generated `using namespace` directives are expanded
+to fully qualified type names so the completion source can safely follow the
+wrapper in one payload; command candidates still come exclusively from Clap.
+
+Completion is deliberately static. Do not read registry/discovery/session
+state, probe Compose services, query Docker resources or contexts, add a Tab-
+time subprocess, cache, daemon, dynamic-completion framework, or reproduce
+Docker Compose/raw command argv. Manpages and release/installer completion
+assets are outside Phase 8.5.
+
 Rust tests and manual development commands must set
 `DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
 developer's real v1 or v2 state. The override contains `dstack.conf` and

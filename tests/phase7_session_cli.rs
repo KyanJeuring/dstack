@@ -39,12 +39,23 @@ fn project(parent: &Path, name: &str, files: &[&str]) -> PathBuf {
 fn hidden_shell_init_management_and_direct_public_commands_are_bootstrap_free() {
     let temp = TempDir::new().unwrap();
     for shell in ["bash", "zsh", "fish", "powershell"] {
-        let root = temp.path().join(shell);
-        let output = run_dstack(&root, temp.path(), &["shell", "__init", shell]);
-        assert!(output.status.success(), "{}", text(output.stderr));
-        assert!(!output.stdout.is_empty());
-        assert!(output.stderr.is_empty());
-        assert!(!root.exists(), "shell init bootstrapped {shell} state");
+        for protocol in ["__completions", "__init"] {
+            let root = temp.path().join(format!("{shell}-{protocol}"));
+            let output = Command::new(env!("CARGO_BIN_EXE_dstack"))
+                .args(["shell", protocol, shell])
+                .current_dir(temp.path())
+                .env("DSTACK_CONFIG_DIR", &root)
+                .env("DSTACK_SESSION", "malformed session must stay lazy")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{}", text(output.stderr));
+            assert!(!output.stdout.is_empty());
+            assert!(output.stderr.is_empty());
+            assert!(
+                !root.exists(),
+                "shell {protocol} bootstrapped {shell} state"
+            );
+        }
     }
 
     let old_init_root = temp.path().join("old-init");
@@ -52,6 +63,17 @@ fn hidden_shell_init_management_and_direct_public_commands_are_bootstrap_free() 
     assert_eq!(old_init.status.code(), Some(2));
     assert!(!old_init_root.exists());
     assert!(!temp.path().join("old-init").exists());
+
+    for arguments in [
+        &["shell", "__completions"][..],
+        &["shell", "__completions", "elvish"][..],
+        &["shell", "__completions", "nushell"][..],
+    ] {
+        let root = temp.path().join("invalid-completion");
+        let output = run_dstack(&root, temp.path(), arguments);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!root.exists());
+    }
 
     let profile = temp.path().join("profiles/custom profile λ");
     let management_root = temp.path().join("management");
@@ -319,6 +341,42 @@ test "$?" -eq 2 || exit 30
 
 #[cfg(unix)]
 #[test]
+fn bash_completion_is_registered_for_the_wrapper_and_excludes_hidden_protocol() {
+    let script = r#"
+eval "$(command dstack shell __init bash)" || exit 20
+eval "$(command dstack shell __init bash)" || exit 21
+[[ "$(type -t dstack)" == function ]] || exit 22
+[[ "$(complete -p dstack)" == *"-F _dstack"* ]] || exit 23
+
+COMP_WORDS=(dstack sys)
+COMP_CWORD=1
+_dstack dstack sys ""
+[[ " ${COMPREPLY[*]} " == *" system "* ]] || exit 24
+
+COMP_WORDS=(dstack shell "")
+COMP_CWORD=2
+_dstack dstack "" shell
+[[ " ${COMPREPLY[*]} " == *" install "* ]] || exit 25
+[[ " ${COMPREPLY[*]} " == *" status "* ]] || exit 26
+[[ " ${COMPREPLY[*]} " == *" uninstall "* ]] || exit 27
+for hidden in __init __activate __clear __completions; do
+  [[ " ${COMPREPLY[*]} " != *" $hidden "* ]] || exit 28
+done
+"#;
+    let output = Command::new("bash")
+        .args(["-c", script])
+        .env("PATH", shell_path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Bash completion smoke failed: {}",
+        text(output.stderr)
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn bash_adapter_keeps_shell_looking_session_data_literal() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
@@ -371,11 +429,11 @@ fn available_zsh_and_fish_adapters_smoke_activation_and_unset() {
     let cases = [
         (
             "zsh",
-            r#"eval "$(dstack shell __init zsh)"; eval "$(dstack shell __init zsh)"; dstack use profile || exit 20; [[ -n "$DSTACK_SESSION" ]] || exit 21; dstack unset || exit 22; [[ -z "${DSTACK_SESSION+x}" ]]"#,
+            r#"eval "$(dstack shell __init zsh)"; eval "$(dstack shell __init zsh)"; (( $+functions[dstack] )) || exit 18; [[ "${_comps[dstack]}" = _dstack ]] || exit 19; dstack use profile || exit 20; [[ -n "$DSTACK_SESSION" ]] || exit 21; dstack unset || exit 22; [[ -z "${DSTACK_SESSION+x}" ]]"#,
         ),
         (
             "fish",
-            r#"dstack shell __init fish | source; dstack shell __init fish | source; dstack use profile; or exit 20; set -q DSTACK_SESSION; or exit 21; dstack unset; or exit 22; not set -q DSTACK_SESSION"#,
+            r#"dstack shell __init fish | source; dstack shell __init fish | source; functions -q dstack; or exit 18; set -l matches (complete -C 'dstack sys' | string match -r '^system\t'); test (count $matches) -eq 1; or exit 19; dstack use profile; or exit 20; set -q DSTACK_SESSION; or exit 21; dstack unset; or exit 22; not set -q DSTACK_SESSION"#,
         ),
     ];
     for (shell, script) in cases {
@@ -395,6 +453,55 @@ fn available_zsh_and_fish_adapters_smoke_activation_and_unset() {
             text(output.stderr)
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn zsh_completion_initialization_is_safe_when_ready_or_unavailable() {
+    if Command::new("zsh").arg("--version").output().is_err() {
+        return;
+    }
+
+    let initialized = r#"
+autoload -Uz compinit
+compinit
+__dstack_compinit_called=0
+compinit() { __dstack_compinit_called=1; return 91; }
+eval "$(command dstack shell __init zsh)" || exit 20
+(( __dstack_compinit_called == 0 )) || exit 21
+(( $+functions[dstack] )) || exit 22
+[[ "${_comps[dstack]}" = _dstack ]] || exit 23
+"#;
+    let output = Command::new("zsh")
+        .args(["-f", "-c", initialized])
+        .env("PATH", shell_path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "initialized Zsh completion smoke failed: {}",
+        text(output.stderr)
+    );
+
+    let temp = TempDir::new().unwrap();
+    let empty_fpath = temp.path().join("empty-fpath");
+    fs::create_dir(&empty_fpath).unwrap();
+    let unavailable = r#"
+fpath=("$1")
+eval "$(command dstack shell __init zsh)" 2>/dev/null
+(( $+functions[dstack] )) || exit 30
+(( ! $+functions[_dstack] )) || exit 31
+"#;
+    let output = Command::new("zsh")
+        .args(["-f", "-c", unavailable, "--", empty_fpath.to_str().unwrap()])
+        .env("PATH", shell_path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "unavailable Zsh completion lost the wrapper: {}",
+        text(output.stderr)
+    );
 }
 
 #[cfg(unix)]

@@ -233,12 +233,17 @@ terminal selection. Neither session command adds or removes a registry entry.
 `dstack context show` displays the effective stack, source, project, and
 ordered Compose files; an active terminal selection reports `Source: session`.
 
-A child process cannot change its parent shell. Install the thin v2 adapter in
-the detected shell profile, then follow the printed reload instruction:
+A child process cannot change its parent shell. Install v2 terminal integration
+in the detected shell profile, then follow the printed reload instruction:
 
 ```text
 dstack shell install
 ```
+
+The one installation enables both the thin terminal-session adapter and static
+DStack CLI completion for Bash, Zsh, Fish, and PowerShell. DStack does not
+install a separate completion file. The existing profile loader asks the
+current `dstack` binary for both pieces whenever the profile is loaded.
 
 DStack uses the active adapter, parent process, platform hints, and finally the
 login-shell setting as evidence. It refuses to edit a profile when detection is
@@ -268,15 +273,22 @@ first-class installations: `dstack shell install` detects them and does not add
 a duplicate managed block. Status distinguishes managed, manual, outdated, and
 duplicate integration.
 
+Users who already installed the current Phase 7.2 managed block or canonical
+manual loader do not need to reinstall or migrate it after upgrading DStack.
+Open a new terminal or reload the existing profile: the unchanged loader calls
+the new binary and receives its current adapter and completion definition.
+
 Uninstall removes only a DStack-managed block. A manually added loader remains
 user-owned and must be removed manually; DStack reports it instead of claiming
-that integration was fully uninstalled. Neither install nor uninstall can
-reload or remove a function in the already-running parent shell, so open a new
-terminal or use the command DStack prints. These commands do not remove DStack,
-registry data, or `DSTACK_SESSION`.
+that integration was fully uninstalled. No generic shell completion files are
+searched for or removed. Neither install nor uninstall can reload or remove a
+function or completion registration in the already-running parent shell, so
+open a new terminal or use the command DStack prints. These commands do not
+remove DStack, registry data, or `DSTACK_SESSION`.
 
 For advanced/manual integration, add the loader for the appropriate shell to
-its profile. `__init` is a hidden adapter protocol, not a general public
+its profile. The same single loader initializes both the session adapter and
+completion. `__init` is a hidden runtime protocol, not a general public
 command:
 
 ```bash
@@ -301,12 +313,19 @@ command dstack shell __init fish | source
 ```
 
 The adapter shadows `dstack`, delegates ordinary commands to the executable,
-and intercepts only `use` and `unset`. Running the executable directly for
-those two commands fails with detected profile, automatic setup, manual setup,
-and reload guidance instead of pretending it changed the parent environment.
-The managed loader resolves the current DStack application each time the
-profile loads, so a later binary upgrade supplies the current adapter without
-rewriting the whole function into the profile.
+and intercepts only `use` and `unset`. Completion attaches to that shell-visible
+`dstack` command and is generated from the same current Clap command model used
+by the CLI. It covers DStack commands, subcommands, options, visible aliases,
+and static values supported by each shell generator. It does not query stack
+names, registry entries, Compose services, or Docker resources, and it does not
+attempt to model arbitrary Docker Compose or command arguments.
+
+Running the executable directly for `use` and `unset` fails with detected
+profile, automatic setup, manual setup, and reload guidance instead of
+pretending it changed the parent environment. The managed loader resolves the
+current DStack application each time the profile loads, so a later binary
+upgrade supplies the current adapter and completion without rewriting the
+profile block or installing another asset.
 
 Older Phase 7 manual loaders using public `dstack shell init` are detected as
 outdated. DStack prints the exact current replacement but does not rewrite
@@ -394,7 +413,9 @@ status. This intentionally replaces v1's combined confirmation and masked
 `down -v`/forced-prune failures. There is no `purge`, `clean`, `stop-all`, or
 other compatibility alias.
 
-Phase 8.4 adds no completion, manpages, self-update, installer transition, or
+Phase 8.5 adds only static, Clap-derived completion through the existing shell
+loader. It adds no dynamic candidate lookup, completion cache or daemon,
+manpages, self-update, installer transition, package completion assets, or
 Compose/session redesign.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.

@@ -245,7 +245,7 @@ jobs:
             throw "Native redirected output contains an ANSI escape sequence"
           }
 
-      - name: Smoke PowerShell shell installation and session adapter (Windows)
+      - name: Smoke PowerShell shell installation, completion, and session adapter (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -283,6 +283,44 @@ jobs:
 
           . $profile
           . $profile
+          if ((Get-Command dstack).CommandType -ne [System.Management.Automation.CommandTypes]::Function) {
+            throw "PowerShell integration did not leave dstack as the shell wrapper function"
+          }
+
+          $rootLine = "dstack sys"
+          $rootCompletions = @(
+            (TabExpansion2 -inputScript $rootLine -cursorColumn $rootLine.Length).CompletionMatches |
+              ForEach-Object CompletionText
+          )
+          if ($rootCompletions -notcontains "system") {
+            throw "PowerShell completion did not offer system: $($rootCompletions -join ', ')"
+          }
+
+          $systemLine = "dstack system p"
+          $systemCompletions = @(
+            (TabExpansion2 -inputScript $systemLine -cursorColumn $systemLine.Length).CompletionMatches |
+              ForEach-Object CompletionText
+          )
+          if ($systemCompletions -notcontains "prune") {
+            throw "PowerShell completion did not offer system prune: $($systemCompletions -join ', ')"
+          }
+
+          $shellLine = "dstack shell "
+          $shellCompletions = @(
+            (TabExpansion2 -inputScript $shellLine -cursorColumn $shellLine.Length).CompletionMatches |
+              ForEach-Object CompletionText
+          )
+          foreach ($publicShellCommand in @("install", "status", "uninstall")) {
+            if ($shellCompletions -notcontains $publicShellCommand) {
+              throw "PowerShell completion omitted shell $publicShellCommand"
+            }
+          }
+          foreach ($hiddenShellCommand in @("__init", "__activate", "__clear", "__completions")) {
+            if ($shellCompletions -contains $hiddenShellCommand) {
+              throw "PowerShell completion exposed hidden command $hiddenShellCommand"
+            }
+          }
+
           dstack use $stackName
           if ($LASTEXITCODE -ne 0 -or -not $env:DSTACK_SESSION) {
             throw "PowerShell adapter did not activate DSTACK_SESSION"
@@ -295,6 +333,10 @@ jobs:
           dstack use --help | Out-Null
           if ($LASTEXITCODE -ne 0 -or $env:DSTACK_SESSION -ne $beforeHelp) {
             throw "PowerShell adapter did not pass use help through safely"
+          }
+          dstack --definitely-invalid 2>$null
+          if ($LASTEXITCODE -ne 2 -or $env:DSTACK_SESSION -ne $beforeHelp) {
+            throw "PowerShell adapter did not preserve native failure status and session state"
           }
 
           $status = @(dstack shell status --shell powershell --profile $profile) -join "`n"

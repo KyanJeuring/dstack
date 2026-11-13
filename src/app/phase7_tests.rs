@@ -440,3 +440,30 @@ fn activation_rejects_unknown_and_ambiguous_discovered_names() {
         assert!(error.to_string().contains(expected), "{error}");
     }
 }
+
+#[test]
+fn completion_and_init_are_bootstrap_session_and_process_independent() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let session = SessionEnvironment::with_value("malformed session must stay lazy");
+    let executor = RecordingExecutor::default();
+
+    for shell in ["bash", "zsh", "fish", "powershell"] {
+        for protocol in ["__completions", "__init"] {
+            let (stdout, stderr) = run(
+                &["dstack", "shell", protocol, shell],
+                &paths,
+                temp.path(),
+                &session,
+                &executor,
+            )
+            .unwrap();
+            assert!(!stdout.is_empty(), "{protocol} {shell} produced no source");
+            assert!(stderr.is_empty(), "{protocol} {shell} wrote diagnostics");
+        }
+    }
+
+    assert!(executor.requests().is_empty());
+    assert!(executor.capture_requests().is_empty());
+    assert!(!paths.application_dir().exists());
+}

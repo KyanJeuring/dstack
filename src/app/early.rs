@@ -7,8 +7,8 @@ use crate::{
     outcome::AppOutcome,
     output::{Output, TextStyle},
     shell::{
-        ManagementEnvironment, ShellMutation, init_script, integration_guidance, render_mutation,
-        run_install, run_status, run_uninstall,
+        ManagementEnvironment, ShellMutation, completion_script, init_script, integration_guidance,
+        render_mutation, run_install, run_status, run_uninstall,
     },
 };
 
@@ -48,7 +48,11 @@ pub(super) fn run(
                     Ok(Some(AppOutcome::Success))
                 }
                 ShellCommand::Init { shell } => {
-                    writeln!(stdout, "{}", init_script(*shell))?;
+                    write!(stdout, "{}", init_script(*shell))?;
+                    Ok(Some(AppOutcome::Success))
+                }
+                ShellCommand::Completions { shell } => {
+                    write!(stdout, "{}", completion_script(*shell))?;
                     Ok(Some(AppOutcome::Success))
                 }
                 ShellCommand::Clear { shell } => {

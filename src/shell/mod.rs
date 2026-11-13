@@ -1,3 +1,4 @@
+mod completion;
 mod detection;
 mod error;
 mod init;
@@ -8,6 +9,7 @@ mod mutation;
 mod profile;
 mod quote;
 
+pub use completion::completion_script;
 pub use detection::{
     ADAPTER_VARIABLE, DetectedShell, DetectionEvidence, DetectionFailure, DetectionSource,
     adapter_kind, detect_shell,

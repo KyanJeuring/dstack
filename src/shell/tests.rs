@@ -78,6 +78,27 @@ fn generated_bash_adapter_is_valid_syntax() {
     assert!(child.wait().unwrap().success());
 }
 
+#[cfg(unix)]
+#[test]
+fn generated_zsh_init_is_valid_syntax_when_zsh_is_available() {
+    if Command::new("zsh").arg("--version").output().is_err() {
+        return;
+    }
+    let mut child = Command::new("zsh")
+        .args(["-n"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(init_script(ShellKind::Zsh).as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+}
+
 #[test]
 fn adapters_are_native_thin_idempotent_function_definitions() {
     let bash = init_script(ShellKind::Bash);
@@ -104,4 +125,31 @@ fn adapters_are_native_thin_idempotent_function_definitions() {
     assert!(powershell.contains("Remove-Item Env:DSTACK_SHELL_ADAPTER"));
     assert!(!powershell.contains("bash"));
     assert!(!powershell.contains("cmd /C"));
+}
+
+#[test]
+fn full_init_payloads_are_deterministic_and_define_adapters_before_completion() {
+    for shell in [
+        ShellKind::Bash,
+        ShellKind::Zsh,
+        ShellKind::Fish,
+        ShellKind::Powershell,
+    ] {
+        assert_eq!(init_script(shell), init_script(shell));
+    }
+
+    let bash = init_script(ShellKind::Bash);
+    assert!(bash.find("dstack() {").unwrap() < bash.find("_dstack() {").unwrap());
+
+    let zsh = init_script(ShellKind::Zsh);
+    assert!(zsh.find("dstack() {").unwrap() < zsh.find("autoload -Uz compinit").unwrap());
+
+    let fish = init_script(ShellKind::Fish);
+    assert!(fish.find("function dstack").unwrap() < fish.find("complete -c dstack").unwrap());
+
+    let powershell = init_script(ShellKind::Powershell);
+    assert!(
+        powershell.find("function global:dstack").unwrap()
+            < powershell.find("Register-ArgumentCompleter").unwrap()
+    );
 }

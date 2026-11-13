@@ -399,4 +399,35 @@ MY_VALUE='command dstack shell __init fish | source'
             ProfileIntegration::NotInstalled
         );
     }
+
+    #[test]
+    fn phase7_manual_loaders_and_managed_blocks_remain_byte_for_byte_stable() {
+        let cases = [
+            (
+                ShellKind::Bash,
+                "eval \"$(command dstack shell __init bash)\"",
+                "# >>> DStack shell integration >>>\nif command -v dstack >/dev/null 2>&1; then\n  eval \"$(command dstack shell __init bash)\"\nfi\n# <<< DStack shell integration <<<",
+            ),
+            (
+                ShellKind::Zsh,
+                "eval \"$(command dstack shell __init zsh)\"",
+                "# >>> DStack shell integration >>>\nif command -v dstack >/dev/null 2>&1; then\n  eval \"$(command dstack shell __init zsh)\"\nfi\n# <<< DStack shell integration <<<",
+            ),
+            (
+                ShellKind::Fish,
+                "command dstack shell __init fish | source",
+                "# >>> DStack shell integration >>>\nif type -q dstack\n    command dstack shell __init fish | source\nend\n# <<< DStack shell integration <<<",
+            ),
+            (
+                ShellKind::Powershell,
+                "& {\n  $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction Stop).Source\n  Invoke-Expression ((& $dstackApplication shell __init powershell) -join \"`n\")\n}",
+                "# >>> DStack shell integration >>>\n& {\n  $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction SilentlyContinue).Source\n  if ($null -ne $dstackApplication) {\n    Invoke-Expression ((& $dstackApplication shell __init powershell) -join \"`n\")\n  }\n}\n# <<< DStack shell integration <<<",
+            ),
+        ];
+
+        for (shell, expected_loader, expected_block) in cases {
+            assert_eq!(manual_loader(shell, "\n"), expected_loader);
+            assert_eq!(managed_block(shell, "\n"), expected_block);
+        }
+    }
 }
