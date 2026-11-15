@@ -177,8 +177,9 @@ extract_dir=$temp_root/extracted
 mkdir "$extract_dir"
 tar -xzf "$archive_path" -C "$extract_dir" || fail "could not extract $archive"
 staged_binary=$extract_dir/dstack
-[ -f "$staged_binary" ] && [ ! -L "$staged_binary" ] ||
+if [ ! -f "$staged_binary" ] || [ -L "$staged_binary" ]; then
   fail "release archive does not contain the expected dstack executable"
+fi
 chmod 755 "$staged_binary"
 
 expected_output="dstack ${version#v}"
