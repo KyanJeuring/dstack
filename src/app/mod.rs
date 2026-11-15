@@ -24,6 +24,9 @@ use crate::{
     session::SessionEnvironment,
 };
 
+#[cfg(test)]
+use crate::update::{UpdateBackend, UpdateEnvironment};
+
 /// Runs the v2 application after CLI parsing.
 pub fn run(cli: Cli) -> Result<AppOutcome, AppError> {
     let stdout = io::stdout();
@@ -132,6 +135,44 @@ where
         current_dir,
         executor,
         session,
+        &mut stdout,
+        &mut stderr,
+    )
+}
+
+#[cfg(test)]
+pub(crate) struct UpdateRouteEnvironment<'a, E> {
+    pub paths: &'a AppPaths,
+    pub current_dir: &'a Path,
+    pub executor: &'a E,
+    pub session: &'a SessionEnvironment,
+}
+
+#[cfg(test)]
+pub(crate) fn run_with_update_backend<E>(
+    cli: Cli,
+    route_environment: UpdateRouteEnvironment<'_, E>,
+    backend: &dyn UpdateBackend,
+    update_environment: &UpdateEnvironment,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<AppOutcome, AppError>
+where
+    E: ProcessExecutor + ProcessOutputExecutor,
+{
+    let mut stdout = Output::plain(stdout);
+    let mut stderr = Output::plain(stderr);
+    if let Some(outcome) =
+        early::run_with_update_backend(&cli, backend, update_environment, &mut stdout, &mut stderr)?
+    {
+        return Ok(outcome);
+    }
+    run_with_outputs(
+        cli,
+        route_environment.paths,
+        route_environment.current_dir,
+        route_environment.executor,
+        route_environment.session,
         &mut stdout,
         &mut stderr,
     )

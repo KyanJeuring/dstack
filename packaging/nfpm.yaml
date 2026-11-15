@@ -30,6 +30,11 @@ contents:
     file_info:
       mode: 0644
 
+  - src: packaging/install-method
+    dst: /usr/share/dstack-compose/install-method
+    file_info:
+      mode: 0644
+
 overrides:
   rpm:
     depends:

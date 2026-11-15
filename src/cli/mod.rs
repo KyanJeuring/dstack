@@ -9,6 +9,7 @@ mod lifecycle;
 mod migration;
 mod network;
 mod registry;
+mod self_update;
 mod service_command;
 mod session;
 mod shell;
@@ -38,6 +39,7 @@ pub use network::{
     NetworkRemoveArgs,
 };
 pub use registry::{RegistryArgs, RegistryCommand};
+pub use self_update::SelfUpdateArgs;
 pub use service_command::{ExecArgs, RunArgs};
 pub use session::UseArgs;
 pub use shell::{ShellActivateArgs, ShellArgs, ShellCommand, ShellManageArgs, ShellStatusArgs};
@@ -122,6 +124,8 @@ pub enum Command {
     Unset,
     /// Install, inspect, or remove terminal shell integration.
     Shell(ShellArgs),
+    /// Check for or install a newer compatible stable DStack v2 release.
+    SelfUpdate(SelfUpdateArgs),
 }
 
 impl Cli {

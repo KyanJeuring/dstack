@@ -21,6 +21,8 @@ install: release
 	install -m 755 "target/release/$(BINARY)" "$(BINDIR)/$(BINARY)"
 
 update:
+	# Source-checkout convenience: fast-forward, rebuild, and reinstall locally.
+	# This is not the production `dstack self-update` command.
 	git pull --ff-only
 	$(MAKE) install
 

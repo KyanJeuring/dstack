@@ -82,6 +82,7 @@ jobs:
           # run.sh carries source annotations for every case and helper.
           shellcheck -x \
             dstack.sh \
+            install/install.sh \
             tests/characterization/run.sh \
             tests/characterization/helpers/child-driver.bash \
             tests/characterization/stubs/docker \
@@ -91,6 +92,7 @@ jobs:
       - name: Syntax check
         shell: bash
         run: |
+          sh -n install/install.sh
           bash_files=(
             dstack.sh
             tests/characterization/run.sh
@@ -110,6 +112,7 @@ jobs:
         shell: bash
         run: |
           test -x dstack.sh
+          test -x install/install.sh
           test -x tests/characterization/run.sh
           test -x tests/characterization/stubs/docker
           test -x tests/characterization/stubs/docker-deny
@@ -205,6 +208,101 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release --locked
+
+      - name: Smoke repository-owned Unix installer dry-run
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          test_root="$RUNNER_TEMP/dstack-installer-dry-run"
+          install_dir="$test_root/bin"
+          profile="$test_root/profile"
+          mkdir -p "$test_root"
+          printf 'sentinel profile content\n' > "$profile"
+          before="$(shasum -a 256 "$profile")"
+
+          output="$({
+            HOME="$test_root/home" \
+              DSTACK_VERSION= \
+              DSTACK_INSTALL_DIR= \
+              install/install.sh \
+                --version v2.0.0 \
+                --install-dir "$install_dir" \
+                --dry-run
+          })"
+          printf '%s\n' "$output"
+
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) expected_platform=linux-x86_64 ;;
+            Darwin-x86_64) expected_platform=macos-x86_64 ;;
+            Darwin-arm64) expected_platform=macos-aarch64 ;;
+            *) printf 'Unexpected installer test platform.\n' >&2; exit 1 ;;
+          esac
+          grep -F "Platform: $expected_platform" <<< "$output"
+          grep -F "Release asset: dstack-v2.0.0-$expected_platform.tar.gz" <<< "$output"
+          grep -F "Destination: $install_dir/dstack" <<< "$output"
+          test ! -e "$install_dir"
+          test ! -e "$test_root/home"
+          test "$(shasum -a 256 "$profile")" = "$before"
+
+          for invalid_version in v1.9.0 v3.0.0 foo v2.1.0-beta.1; do
+            if install/install.sh \
+              --version "$invalid_version" \
+              --install-dir "$install_dir" \
+              --dry-run >/dev/null 2>&1; then
+              printf 'Installer accepted invalid version: %s\n' "$invalid_version" >&2
+              exit 1
+            fi
+          done
+
+      - name: Parse and smoke repository-owned PowerShell installer dry-run
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw -LiteralPath .\install\install.ps1
+          [void][ScriptBlock]::Create($source)
+
+          $testRoot = Join-Path $env:RUNNER_TEMP 'dstack-installer-dry-run'
+          $installDir = Join-Path $testRoot 'bin'
+          New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
+          $profileSentinel = Join-Path $testRoot 'profile.ps1'
+          Set-Content -LiteralPath $profileSentinel -Value 'sentinel profile content'
+          $before = (Get-FileHash -LiteralPath $profileSentinel -Algorithm SHA256).Hash
+
+          $output = @(
+            & .\install\install.ps1 -Version v2.0.0 -InstallDir $installDir -DryRun
+          ) -join "`n"
+          Write-Output $output
+          if ($output -notmatch 'Platform: windows-x86_64' -or
+              $output -notmatch 'Release asset: dstack-v2\.0\.0-windows-x86_64\.zip' -or
+              $output -notmatch [Regex]::Escape("Destination: $(Join-Path $installDir 'dstack.exe')")) {
+            throw 'PowerShell dry-run did not report the expected release plan.'
+          }
+          if (Test-Path -LiteralPath $installDir) {
+            throw 'PowerShell dry-run created the install directory.'
+          }
+          $after = (Get-FileHash -LiteralPath $profileSentinel -Algorithm SHA256).Hash
+          if ($before -ne $after) {
+            throw 'PowerShell dry-run modified the profile sentinel.'
+          }
+          foreach ($invalidVersion in @('v1.9.0', 'v3.0.0', 'foo', 'v2.1.0-beta.1')) {
+            try {
+              & .\install\install.ps1 -Version $invalidVersion -InstallDir $installDir -DryRun | Out-Null
+              throw "PowerShell installer accepted invalid version: $invalidVersion"
+            } catch {
+              if ($_.Exception.Message -like 'PowerShell installer accepted*') {
+                throw
+              }
+            }
+          }
+
+      - name: Verify installers do not own shell profiles or PATH
+        shell: bash
+        run: |
+          if grep -En '(\.bashrc|\.zshrc|config\.fish|Microsoft\.PowerShell_profile|SetEnvironmentVariable)' \
+            install/install.sh install/install.ps1; then
+            printf 'Binary installers must not mutate shell profiles or PATH.\n' >&2
+            exit 1
+          fi
 
       - name: Verify native version (Unix)
         if: runner.os != 'Windows'

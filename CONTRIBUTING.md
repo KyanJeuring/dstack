@@ -340,3 +340,76 @@ test may require a Docker daemon.
 
 The same developer workflows are available through `make fmt-check`,
 `make lint`, `make test`, `make build`, and `make ci` on Unix-like systems.
+
+## Phase 9 release and self-update contract
+
+Phase 9 makes v2 distributable; it does not make v2 the production default.
+The external `kyanjeuring.com/scripts/install-dstack` endpoint, v1 source line,
+legacy registry, and public production recommendation remain final-cutover
+work. Do not tag or publish a release merely to validate this phase.
+
+`dstack self-update [--check]` is an early application-maintenance route. It
+must remain independent from config/registry bootstrap, `DSTACK_SESSION`, stack
+discovery, Compose resolution, Docker, and Docker Compose. Network access occurs
+only for that explicit command. Never add periodic checks, a stamp file,
+telemetry, a daemon, a background task, another updater alias, confirmation,
+privilege escalation, or automatic restart/profile rewriting.
+
+The update domain is split into platform/version mapping, a narrow backend
+trait, command/ownership policy, typed errors, and the production GitHub
+backend. Application tests use a fake backend; ordinary tests must never query
+GitHub or replace a test executable. Production release selection must accept
+only exact stable `v2.X.Y` tags from published `KyanJeuring/dstack` GitHub
+Releases. The updater library's compatible strategy alone is insufficient
+because it can fall back to an incompatible major; DStack explicitly filters
+stable v2 and pins the chosen tag.
+
+The immutable standalone asset contract is:
+
+| OS/architecture | Key | Archive | Binary path |
+|---|---|---|---|
+| Linux x86_64 | `linux-x86_64` | `.tar.gz` | `dstack` |
+| Linux aarch64 | `linux-aarch64` | `.tar.gz` | `dstack` |
+| macOS x86_64 | `macos-x86_64` | `.tar.gz` | `dstack` |
+| macOS aarch64 | `macos-aarch64` | `.tar.gz` | `dstack` |
+| Windows x86_64 | `windows-x86_64` | `.zip` | `dstack.exe` |
+
+Names are exactly `dstack-vVERSION-KEY.EXTENSION`. Asset matching is equality,
+not a fuzzy target substring, so packages, installer scripts, sidecars, and the
+aggregate manifest cannot be selected. `SHA256SUMS` is mandatory for runtime
+updates; its absence or missing selected-asset entry is an error. Keep the
+updater crate's independent GitHub asset-digest verification enabled. A
+checksum, archive, writability, or replacement failure must leave the installed
+binary unchanged as far as the platform updater can guarantee.
+
+Official Debian, RPM, and Arch packages install the package-owned marker
+`/usr/share/dstack-compose/install-method` with value `system-package`.
+Together with `/usr/bin/dstack`, it blocks in-place self-update. Standalone
+archives never contain the marker. The normal `$CARGO_HOME/bin/dstack` or
+`$HOME/.cargo/bin/dstack` path similarly defers to
+`cargo install dstack-compose --locked --force`; arbitrary custom Cargo roots
+are deliberately not guessed. Both ownership classes may still use `--check`.
+
+`install/install.sh` and `install/install.ps1` own only binary delivery. They
+select the exact supported archive, verify its `.sha256` sidecar and payload,
+run staged `dstack --version`, and perform a same-directory staged replacement.
+They support latest stable publication, stable-v2 version pins, destination
+override, and an explicit-version offline dry run. They do not install packages,
+edit PATH/profiles, call `dstack shell install`, touch DStack state, invoke
+Docker, remove/migrate v1, or elevate privileges. A detected v1 installation is
+only warned about and left untouched.
+
+Release builds retain standalone archives plus Debian, RPM, and Arch packages.
+The single assembly job adds stable installer assets and sidecars, requires all
+five standalone archives and every expected sidecar, verifies each sidecar,
+then generates `SHA256SUMS`. Only after those gates may it create a draft GitHub
+Release. Human review/publishing remains intentional. Publication of a matching
+`v2.*` GitHub Release triggers the existing trusted crates.io workflow after
+the tag/Cargo version check; Phase 9 never runs `cargo publish` itself.
+
+Standalone rollback is an explicit older installer version pin, not a
+self-update downgrade flag. `make install` and `make update` remain local
+source-checkout conveniences; the latter means fast-forward Git pull, release
+rebuild, and local reinstall, not production self-update. Final cutover alone
+may change the website endpoint, v1 support/deprecation language, default
+installation docs, or legacy profile/registry migration policy.

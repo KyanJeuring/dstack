@@ -66,6 +66,7 @@ jobs:
         run: |
           shellcheck -x \
             dstack.sh \
+            install/install.sh \
             tests/characterization/run.sh \
             tests/characterization/helpers/child-driver.bash \
             tests/characterization/stubs/docker \
@@ -74,6 +75,7 @@ jobs:
       - name: Check Bash syntax
         shell: bash
         run: |
+          sh -n install/install.sh
           bash_files=(
             dstack.sh
             tests/characterization/run.sh
@@ -174,6 +176,8 @@ jobs:
             "target/${{ matrix.target }}/release/dstack" \
             "$PACKAGE_ROOT/usr/bin/dstack"
           install -Dm644 LICENSE "$PACKAGE_ROOT/usr/share/doc/dstack-compose/copyright"
+          install -Dm644 packaging/install-method \
+            "$PACKAGE_ROOT/usr/share/dstack-compose/install-method"
 
           mkdir -p "$PACKAGE_ROOT/DEBIAN"
           cat > "$PACKAGE_ROOT/DEBIAN/control" <<EOF
@@ -271,6 +275,50 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
+
+      - name: Add stable installer assets and checksums
+        shell: bash
+        run: |
+          install -m 755 install/install.sh dist/install-dstack.sh
+          install -m 644 install/install.ps1 dist/install-dstack.ps1
+          cd dist
+          sha256sum install-dstack.sh > install-dstack.sh.sha256
+          sha256sum install-dstack.ps1 > install-dstack.ps1.sha256
+
+      - name: Validate release asset contract
+        shell: bash
+        run: |
+          version="$GITHUB_REF_NAME"
+          expected=(
+            "dstack-$version-linux-x86_64.tar.gz"
+            "dstack-$version-linux-aarch64.tar.gz"
+            "dstack-$version-macos-x86_64.tar.gz"
+            "dstack-$version-macos-aarch64.tar.gz"
+            "dstack-$version-windows-x86_64.zip"
+            "install-dstack.sh"
+            "install-dstack.ps1"
+            "dstack-compose_${version#v}_amd64.deb"
+            "dstack-compose_${version#v}_arm64.deb"
+            "dstack-compose-${version#v}-1.x86_64.rpm"
+            "dstack-compose-${version#v}-1.aarch64.rpm"
+            "dstack-compose-${version#v}-1-x86_64.pkg.tar.zst"
+            "dstack-compose-${version#v}-1-aarch64.pkg.tar.zst"
+          )
+          for artifact in "${expected[@]}"; do
+            test -f "dist/$artifact" || {
+              printf 'Missing required release artifact: %s\n' "$artifact" >&2
+              exit 1
+            }
+            test -f "dist/$artifact.sha256" || {
+              printf 'Missing required checksum sidecar: %s.sha256\n' "$artifact" >&2
+              exit 1
+            }
+          done
+
+          for checksum in dist/*.sha256; do
+            checksum_name="${checksum##*/}"
+            (cd dist && sha256sum --check "$checksum_name")
+          done
 
       - name: Create aggregate checksum manifest
         shell: bash

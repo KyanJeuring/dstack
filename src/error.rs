@@ -4,6 +4,7 @@ use crate::{
     compose::ComposeError, config::ConfigError, discovery::DiscoveryError,
     docker::DockerOutputError, migration::MigrationError, process::ProcessError,
     registry::RegistryError, resolution::ResolutionError, session::SessionError, shell::ShellError,
+    update::UpdateError,
 };
 
 #[derive(Debug)]
@@ -17,6 +18,7 @@ pub enum AppError {
     Resolution(ResolutionError),
     Session(SessionError),
     Shell(ShellError),
+    Update(UpdateError),
     Compose(ComposeError),
     Process(ProcessError),
     DockerOutput(DockerOutputError),
@@ -46,6 +48,7 @@ impl AppError {
             | Self::Resolution(_)
             | Self::Session(_)
             | Self::Shell(_)
+            | Self::Update(_)
             | Self::Compose(_)
             | Self::Process(_)
             | Self::DockerOutput(_)
@@ -70,6 +73,7 @@ impl fmt::Display for AppError {
             Self::Resolution(error) => error.fmt(formatter),
             Self::Session(error) => error.fmt(formatter),
             Self::Shell(error) => error.fmt(formatter),
+            Self::Update(error) => error.fmt(formatter),
             Self::Compose(error) => error.fmt(formatter),
             Self::Process(error) => error.fmt(formatter),
             Self::DockerOutput(error) => error.fmt(formatter),
@@ -103,6 +107,7 @@ impl std::error::Error for AppError {
             Self::Resolution(error) => Some(error),
             Self::Session(error) => Some(error),
             Self::Shell(error) => Some(error),
+            Self::Update(error) => Some(error),
             Self::Compose(error) => Some(error),
             Self::Process(error) => Some(error),
             Self::DockerOutput(error) => Some(error),
@@ -155,6 +160,12 @@ impl From<SessionError> for AppError {
 impl From<ShellError> for AppError {
     fn from(error: ShellError) -> Self {
         Self::Shell(error)
+    }
+}
+
+impl From<UpdateError> for AppError {
+    fn from(error: UpdateError) -> Self {
+        Self::Update(error)
     }
 }
 

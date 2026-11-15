@@ -157,6 +157,9 @@ pub(crate) fn run(
         Command::Use(_) | Command::Unset => {
             unreachable!("public session command was routed after the early boundary")
         }
+        Command::SelfUpdate(_) => {
+            unreachable!("self-update command was routed after the early boundary")
+        }
     }
 }
 

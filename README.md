@@ -27,6 +27,8 @@ dstack unset
 dstack shell install [--shell SHELL] [--profile PATH] [--dry-run]
 dstack shell status [--shell SHELL] [--profile PATH]
 dstack shell uninstall [--shell SHELL] [--profile PATH] [--dry-run]
+dstack self-update
+dstack self-update --check
 dstack [-s NAME] [--file FILE]... context show
 dstack [-s NAME] [--file FILE]... compose [--] [ARGS...]
 dstack [-s NAME] [--file FILE]... up [--remove-orphans] [SERVICE...]
@@ -415,8 +417,130 @@ other compatibility alias.
 
 Phase 8.5 adds only static, Clap-derived completion through the existing shell
 loader. It adds no dynamic candidate lookup, completion cache or daemon,
-manpages, self-update, installer transition, package completion assets, or
-Compose/session redesign.
+manpages, package completion assets, or Compose/session redesign.
+
+### Phase 9 release preparation (not the production cutover)
+
+Phase 9 makes the v2 binary distributable while the characterized Bash v1
+release remains the supported production default. The production recommendation
+above still uses the external v1 installer. The repository-owned v2 installers
+and their future GitHub Release URLs are prepared release infrastructure; no
+published v2 release exists yet, and those URLs must not be presented as live
+installation commands until final cutover.
+
+The v2 maintenance commands are deliberately explicit:
+
+```text
+dstack self-update --check
+dstack self-update
+```
+
+Both commands query published GitHub Releases from `KyanJeuring/dstack` only.
+They accept exact stable `v2.X.Y` releases, stay within the v2 major line, and
+ignore drafts, prereleases, v1 tags, hypothetical v3 tags, workflow artifacts,
+branches, and crates.io source archives. `--check` is read-only: it reports up
+to date, update available, or no compatible published v2 release without
+downloading an archive or changing files. A successful check exits zero whether
+or not an update exists. Network/API failures remain errors.
+
+Applying an update selects exactly one platform archive:
+
+| Platform | Standalone release asset |
+|---|---|
+| Linux x86_64 | `dstack-vVERSION-linux-x86_64.tar.gz` |
+| Linux ARM64 | `dstack-vVERSION-linux-aarch64.tar.gz` |
+| macOS Intel | `dstack-vVERSION-macos-x86_64.tar.gz` |
+| macOS Apple Silicon | `dstack-vVERSION-macos-aarch64.tar.gz` |
+| Windows x86_64 | `dstack-vVERSION-windows-x86_64.zip` |
+
+The updater requires the release's `SHA256SUMS` asset and the exact selected
+archive entry in it. A missing, malformed, or mismatched checksum aborts before
+replacement; GitHub's per-asset digest is also verified when GitHub supplies
+one. The archive must yield `dstack` on Unix or `dstack.exe` on Windows. DStack
+uses the updater library's native in-place replacement and writability preflight,
+never invokes `sudo`, UAC elevation, a cleanup shell, Docker, or Docker Compose,
+and never restarts itself. After a successful replacement it recommends opening
+a new terminal or reloading the shell profile so the static completion definition
+comes from the new binary. No normal DStack command performs an update check;
+there is no timer, state file, daemon, background task, or telemetry.
+
+Installation ownership determines the supported update path:
+
+| Installation channel | Update owner |
+|---|---|
+| Standalone archive or repository-owned standalone installer | `dstack self-update` is supported |
+| Debian, RPM, or Arch package | Use the same system package manager |
+| `cargo install dstack-compose` | Use `cargo install dstack-compose --locked --force` |
+
+Official Linux packages own
+`/usr/share/dstack-compose/install-method`, so a package-installed
+`/usr/bin/dstack` refuses in-place self-update. A binary in the normal
+`$CARGO_HOME/bin` location (or `$HOME/.cargo/bin`) similarly defers to Cargo.
+Arbitrary historical `cargo install --root` paths cannot be identified without
+an installer database and are therefore outside this narrow guard. Read-only
+`--check` remains available for every installation channel.
+
+The repository now owns two future standalone installer sources:
+
+```text
+install/install.sh
+install/install.ps1
+```
+
+Release assembly publishes them with stable names `install-dstack.sh` and
+`install-dstack.ps1` plus checksum sidecars. The Unix installer is POSIX
+`/bin/sh` for supported Linux and macOS systems; the PowerShell installer is
+native Windows x86_64. Both default to `$HOME/.local/bin`, support an explicit
+install directory, normalize `2.X.Y` and `v2.X.Y` version pins, verify the
+selected archive's per-asset `.sha256` sidecar, require the exact archive
+payload, run the staged binary's `dstack --version`, and stage a sibling before
+replacement. They clean temporary download/extraction data and do not require
+Docker.
+
+The intended options are:
+
+```text
+install-dstack.sh [--version v2.X.Y] [--install-dir PATH] [--dry-run]
+install-dstack.ps1 [-Version v2.X.Y] [-InstallDir PATH] [-DryRun]
+```
+
+Unix also accepts `DSTACK_VERSION` and `DSTACK_INSTALL_DIR`; PowerShell accepts
+the same environment variables. With an explicit version, `--dry-run`/`-DryRun`
+is fully offline and only reports version, platform, asset, and destination.
+Without a pin, a real install resolves GitHub's latest published stable release.
+The installers never edit PATH, `.bashrc`, `.zshrc`, Fish configuration,
+PowerShell profiles, or DStack configuration/session/registry state. If the
+destination is not currently on PATH, they print the exact directory to add;
+shell integration remains a separate later command:
+
+```text
+dstack shell install
+```
+
+An obvious v1 file at `$HOME/.local/share/dstack/dstack.sh` is reported and
+left unchanged. The installer does not delete v1, edit its source line, migrate
+its registry, or perform final cutover work.
+
+Each eventual v2 draft release retains these parallel channels:
+
+- five standalone archives and the two standalone installers;
+- Debian packages for AMD64 and ARM64;
+- RPM packages for x86_64 and ARM64;
+- Arch packages for x86_64 and ARM64;
+- the `dstack-compose` crate after the GitHub Release is reviewed and published.
+
+The crate command will be `cargo install dstack-compose --locked`, but this is
+future-channel documentation only: the crate is not published yet. Release
+creation stays draft-first for human review, and crates.io trusted publishing
+remains triggered only by publication of a matching `v2.*` GitHub Release.
+
+For standalone rollback, rerun a repository-owned installer with an explicit
+older stable v2 version (for example `--version v2.0.0` or
+`DSTACK_VERSION=v2.0.0`). This deliberate version pin is the rollback path;
+`dstack self-update` only moves forward and has no downgrade/version flag.
+Final cutover will separately decide when to replace or redirect
+`https://kyanjeuring.com/scripts/install-dstack`, switch public recommendations
+to v2, and publish v1 migration/deprecation guidance.
 
 `DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
 
