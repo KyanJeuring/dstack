@@ -77,3 +77,69 @@ fn updater_configuration_keeps_mandatory_integrity_and_unattended_gates() {
     assert!(backend.contains(".unattended()"));
     assert!(!backend.contains(".verify_release_digest(false)"));
 }
+
+#[test]
+fn production_readme_and_release_notes_present_v2_as_current() {
+    let readme = source("README.md");
+    let notes = source(".github/RELEASE_TEMPLATE.md");
+
+    assert!(readme.contains("DStack v2 is the current supported release"));
+    assert!(readme.contains("DStack v1.11.0 is the final legacy Bash release"));
+    assert!(readme.contains("Linux, macOS, and Windows"));
+    assert!(readme.contains("Bash, Zsh, Fish, and PowerShell"));
+    assert!(!readme.contains("v1 is the supported production release"));
+    assert!(!readme.contains("v2 is in development"));
+    assert!(!readme.contains("do not replace v1"));
+
+    assert!(notes.contains("intentionally breaking CLI redesign"));
+    assert!(notes.contains("MIGRATING_V1_TO_V2.md"));
+    assert!(!notes.contains("<!--"));
+}
+
+#[test]
+fn tracked_migration_guide_handles_registry_shadowing_and_session_changes() {
+    let guide = source("MIGRATING_V1_TO_V2.md");
+
+    for required in [
+        "dstack migrate registry --dry-run",
+        "dstack migrate registry",
+        "function named `dstack`",
+        "may still be active",
+        "DSTACK_COMPOSE_FILE",
+        "DSTACK_SESSION",
+        "dstack use NAME",
+        "dstack container stop --all",
+        "v1.11.0 tag and release",
+    ] {
+        assert!(
+            guide.contains(required),
+            "migration guide omitted {required}"
+        );
+    }
+}
+
+#[test]
+fn installers_warn_about_v1_shadowing_without_deleting_legacy_files() {
+    let unix = source("install/install.sh");
+    let powershell = source("install/install.ps1");
+
+    for installer in [&unix, &powershell] {
+        assert!(installer.contains("legacy v1 Bash integration may still shadow"));
+        assert!(installer.contains("MIGRATING_V1_TO_V2.md"));
+        assert!(installer.contains("migrate registry --dry-run"));
+        assert!(installer.contains("Legacy v1 files and shell-profile lines were left unchanged"));
+    }
+
+    assert!(!unix.contains("rm -rf \"$HOME/.local/share/dstack\""));
+    assert!(!powershell.contains("Remove-Item -LiteralPath $Legacy"));
+}
+
+#[test]
+fn legacy_registry_migration_remains_a_supported_rust_path() {
+    let paths = source("src/config/paths.rs");
+    let migration = source("src/migration/registry.rs");
+
+    assert!(paths.contains("application_dir.join(\"registry\")"));
+    assert!(migration.contains("pub fn migrate_registry"));
+    assert!(migration.contains("The source is never modified"));
+}

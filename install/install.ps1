@@ -144,8 +144,15 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($HOME)) {
     $Legacy = Join-Path $HOME '.local/share/dstack/dstack.sh'
     if (Test-Path -LiteralPath $Legacy -PathType Leaf) {
-      Write-Output 'A DStack v1 installation was detected and was left unchanged.'
-      Write-Output 'The v1-to-v2 cutover/migration is a separate step.'
+      Write-Output "DStack v2 was installed to $Destination."
+      Write-Output 'The legacy v1 Bash integration may still shadow the v2 binary.'
+      Write-Output 'Follow MIGRATING_V1_TO_V2.md before expecting `dstack` to invoke v2:'
+      Write-Output "  https://github.com/$Repository/blob/main/MIGRATING_V1_TO_V2.md"
+      Write-Output 'Preview registry migration with the installed v2 executable:'
+      Write-Output "  & `"$Destination`" migrate registry --dry-run"
+      Write-Output 'Then migrate after reviewing the preview:'
+      Write-Output "  & `"$Destination`" migrate registry"
+      Write-Output 'Legacy v1 files and shell-profile lines were left unchanged.'
     }
   }
 } finally {

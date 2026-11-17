@@ -14,15 +14,15 @@ release:
 run:
 	cargo run --locked -- $(ARGS)
 
-# Source-install convenience for v2 development. This is not the future
-# repository-owned production installer described by the architecture docs.
+# Source-checkout convenience. Production standalone installs use the
+# repository-owned release installers in install/.
 install: release
 	mkdir -p "$(BINDIR)"
 	install -m 755 "target/release/$(BINARY)" "$(BINDIR)/$(BINARY)"
 
 update:
 	# Source-checkout convenience: fast-forward, rebuild, and reinstall locally.
-	# This is not the production `dstack self-update` command.
+	# This is distinct from the production `dstack self-update` command.
 	git pull --ff-only
 	$(MAKE) install
 

@@ -1,415 +1,82 @@
 # Contributing to DStack
 
-Thanks for your interest in contributing to **DStack**
+DStack v2 is the supported Rust implementation. Changes should keep the CLI
+predictable, preserve exact process arguments, and make destructive Docker
+scope explicit.
 
-## Philosophy
-DStack is designed to be:
-- Simple
-- Predictable
-- Shell-first
-- Zero dependencies (besides Docker)
+## Workflow
 
-Please keep changes aligned with these goals.
+1. Fork and clone the repository.
+2. Create a focused branch.
+3. Add tests for behavior changes.
+4. Run the validation gates below.
+5. Open a pull request describing the change, motivation, and any breaking or
+   destructive behavior.
 
----
+Do not test cleanup or mutation commands against a real Docker daemon for
+routine validation. Use isolated homes/config roots and guarded fake processes.
 
-## How to contribute
+## Rust conventions
 
-### 1. Fork the repository
+- Format with `cargo fmt`.
+- Keep Clippy warning-free across all targets and features.
+- Prefer typed command models and exact native argv over shell construction.
+- Keep stack-scoped Compose commands separate from host-scoped Docker
+  namespaces.
+- Preserve `DSTACK_SESSION` as terminal-only adapter state; do not persist a
+  session file or interpret v1 `DSTACK`/`DSTACK_COMPOSE_FILE` as v2 state.
+- Do not add legacy v1 command aliases. Migration documentation is the
+  compatibility path.
+- Shell-profile tests must use temporary explicit profiles and never touch a
+  developer's real profile.
 
-Create a fork and clone it locally.
+## Validation
 
-### 2. Create a feature branch
-
-```bash
-git checkout -b feature/my-feature
-```
-
-### 3. Make your changes
-
-Keep functions POSIX-friendly where possible
-
-Avoid unnecessary external dependencies
-
-Prefer readability over cleverness
-
-### 4. Test manually
-
-Please test:
-
-- Inside a project directory
-- Outside a project directory
-- With and without registered stacks
-
-### 5. Submit a Pull Request
-
-Use the PR template and describe:
-
-What you changed
-
-Why it’s useful
-
-Any breaking changes
-
----
-
-## Code style
-
-Bash (not zsh-specific)
-
-2 spaces indentation
-
-Functions prefixed with _ are internal
-
-Public commands must be documented in README
-
----
-
-## Versioning
-
-This project uses semantic versioning:
-
-MAJOR – breaking changes
-
-MINOR – new features
-
-PATCH – bug fixes
-
-## DStack v2 development
-
-The supported runtime is still the characterized Bash v1 implementation.
-DStack v2 is an in-progress Rust migration that starts at version `2.0.0`.
-Changes must keep the v1 characterization suite green and record approved v2
-divergences separately rather than rewriting v1 expectations.
-
-Rust validation uses:
+Run the production Rust gates:
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --all-features --locked
-cargo build --locked
+cargo build --release --locked
+cargo package --locked
+make ci
 ```
 
-Phase 6 adds namespaced host-scoped Docker container, image, volume, and network
-utilities. They must stay independent from stack discovery, registry lookup,
-Compose invocation construction, and `ResolvedContext`. Bounded metadata
-commands use the generic captured-output process interface; live stats,
-inspection, one-container port lookup, and explicit volume removal retain the
-streaming executor and inherited stdio. Do not add shell pipelines, legacy
-abbreviated aliases, a generic `dstack docker` passthrough, or host-wide prune
-and stop-all operations as part of this phase.
+Until the production v2 cutover and external installer transition have been
+proven, the tracked v1.11.0 runtime remains a release oracle. Also run:
 
-Phase 7 adds terminal-only active context through the versioned
-`DSTACK_SESSION` environment payload and thin Bash, Zsh, Fish, and PowerShell
-adapters. Registry persistence, terminal session state, and shell rendering
-must remain separate. Stack resolution is explicit `--stack`, then session,
-then exact cwd. Session parsing must stay lazy so malformed state cannot affect
-explicit targets, effective listing, or host-scoped namespaces. Shell mutation
-stdout is machine-consumable code; diagnostics belong on stderr. Never write a
-session file, inspect legacy `DSTACK`/`DSTACK_COMPOSE_FILE` as v2 state, or put
-registry/discovery/Compose logic into an adapter.
+```bash
+bash tests/characterization/run.sh all
+bash tests/characterization/run.sh interactive
+```
 
-Phase 7.1 makes adapter setup practical through public `shell install`,
-`shell status`, and `shell uninstall` commands. The adapter generator and
-mutation endpoints remain hidden as `shell __init`, `shell __activate`, and
-`shell __clear`. Shell detection belongs in the shell subsystem and must keep
-explicit `--shell` authoritative; profile resolution and strict managed-block
-editing must preserve unrelated content, symlinks, permissions, and practical
-line endings. Unknown detection and malformed markers are safe failures.
-Generated adapters scope `DSTACK_SHELL_ADAPTER` to delegated child processes
-so status can distinguish an installed profile from a loaded adapter.
+The suite must report 179/179 noninteractive and 11/11 PTY cases. This
+temporary oracle is retired only after the public v2 release, package channels,
+latest installer, self-update, and historical production installer endpoint
+are verified.
 
-Phase 7.2 treats shell-profile integration ownership as part of the domain.
-The profile analyzer must distinguish DStack-managed blocks, canonical manual
-loaders, legacy `shell init` manual loaders, duplicates, and corrupt markers.
-Manual loader scanning excludes the managed block span and recognizes only the
-documented shell-specific forms, not arbitrary equivalent shell programs.
-DStack may replace or remove its marked managed block, but manually authored
-loaders are user-owned: install/status/uninstall may detect and explain them
-but must never rewrite, remove, adopt, or normalize them automatically.
+Installer changes also require:
 
-Shell management routes before DStack configuration bootstrap. Tests must use
-temporary `--profile` paths and must never edit a developer or CI runner's real
-shell profile. Hidden adapter stdout remains machine-consumable source. Profile
-installation is not the Phase 9 DStack binary installer and must not alter the
-external production installer or implement release migration.
+```bash
+shellcheck -x install/install.sh
+sh -n install/install.sh
+install/install.sh --version v2.0.0 --install-dir /tmp/dstack-bin --dry-run
+```
 
-Phase 7.1 does not add host lifecycle/prune expansion, self-update, production
-installer changes, completion frameworks, or final cutover.
+Use native Windows CI for PowerShell parsing, dry-run, shell integration, and
+completion. The binary installers must not edit profiles or PATH; profile
+integration belongs to `dstack shell install`.
 
-Phase 8.1 completes the targeted host-resource lifecycle surface with explicit
-container, image, and network removal plus image inspection. These commands
-remain context-, session-, registry-, discovery-, Compose-, and configuration-
-independent. Explicit names are sufficient intent: handlers preserve operand
-order, inherit Docker stdio, return Docker status, and never add force, stop,
-disconnect, volume-removal, or prune behavior.
+## Documentation
 
-Phase 8.1 also adds one shared Compose state inspector for `start` and `stop`.
-It uses silent captured probes against the already resolved project and file
-selection, retains per-container replica state, and filters Compose one-off
-containers. Probes are best-effort UX optimization only. A failed, malformed,
-incomplete, unknown, or unsupported result must produce no diagnostic and must
-fall back to the unchanged lifecycle invocation; Docker Compose remains the
-authority. Do not copy this shortcut to `up`, `down`, or another lifecycle
-command without separately defining and approving its semantics.
+Document public commands in `README.md`. Breaking v1 migration details belong
+in `MIGRATING_V1_TO_V2.md`. Private architecture and phase records under
+`docs/` remain ignored and must not be committed.
 
-Phase 8.2 adds one focused system-wide inspection workflow under the Docker
-module. It performs `enumerate -> ordered deduplication -> bounded inspect
-batches -> JSON-array aggregation`. Container enumeration includes stopped
-containers, image enumeration includes intermediate images, volume enumeration
-uses the normal all-volume listing, and network enumeration includes every
-network Docker reports. Identifier parsing is line-oriented, accepts LF/CRLF
-and a final unterminated line, rejects malformed identifiers, and never shell
-splits captured text. Duplicate image IDs—and any duplicate identifiers from
-another list—are inspected once at their first-seen position.
+## Releases
 
-All-resource inspection batches at most 64 concrete targets per Docker inspect
-invocation so argv growth stays conservative on Unix and Windows. Every batch
-must succeed and parse as a JSON array before DStack writes one pretty aggregate
-array to stdout. An empty enumeration writes `[]`; an enumeration or inspect
-child failure returns that Docker status; spawn/wait and JSON-shape failures
-remain typed DStack errors. Docker stderr is inherited because these are
-requested primary operations, unlike Phase 8.1's intentionally silent state
-probes. The enumerate-then-inspect snapshot has an unavoidable race: if a
-resource disappears, Docker's concrete inspect failure is returned without a
-retry or partial JSON.
-
-Explicit named inspect commands deliberately retain direct inherited-stdio
-Docker execution. They do not enumerate, capture, reformat, or aggregate native
-output. `container ip --all` reuses the shared all-container inspection data,
-then validates a typed inspect shape and renders one row per container/network
-membership. It removes only Docker's leading name slash, renders missing IPv4
-or network membership as `-`, and sorts by container name then network name.
-The one-container IP command keeps its existing lightweight formatted inspect.
-
-The Phase 8.2 read-only host-command audit is:
-
-| Command | `--all` decision |
-|---|---|
-| `container list` | Already supports all container states |
-| `container inspect` | Added; inspect every container |
-| `container ip` | Added; aggregate every container/network membership |
-| `container ports` | Not added; no operand is already the running-container overview |
-| `container stats` | Already supports Docker's native all-container mode |
-| `image list` | Already supports all/intermediate images |
-| `image inspect` | Added; inspect every unique image ID |
-| `volume list` | Inherently lists all volumes |
-| `volume inspect` | Added; inspect every volume |
-| `network list` | Inherently lists all networks |
-| `network inspect` | Added; inspect every network Docker reports |
-
-Do not infer further host commands from that matrix. Phase 8.2 does not add
-resource prune, system maintenance, stop-all, completion generation, manpages,
-or update/installer behavior.
-
-Phase 8.3 adds only resource-specific native Docker prune operations. Container
-and network prune accept repeatable `--filter` and `--force`; image and volume
-also accept an explicit `--all`. Image prune defaults to dangling images, while
-`--all` broadens it to all unused images. Volume prune defaults to unused
-anonymous local volumes, while `--all` also includes unused named volumes.
-Container and network prune have no DStack `--all` because Docker defines no
-separate broader mode for those commands. Destructive options are long-form
-only; do not add `-a` or `-f` prune aliases.
-
-Prune is a streamed mutation. Each handler must construct one deterministic
-`DockerInvocation`, execute it through `ProcessExecutor` with inherited stdin,
-stdout, and stderr, and return `AppOutcome::Child`. Never route prune through
-captured output, the inspect-all workflow, or the silent state-probe policy.
-Docker owns its confirmation input, warning and deletion output, eligibility
-rules, reclaimed-space reporting, and numeric status. `--force` forwards
-Docker's `--force` exactly once; DStack must neither add it implicitly nor add
-a second confirmation layer.
-
-Do not pre-enumerate resources, calculate candidates, or probe whether anything
-qualifies before invoking prune. Those designs race Docker and duplicate daemon
-semantics. Filters are opaque repeated Docker values: preserve their relative
-order without parsing, sorting, merging, deduplicating, or maintaining a local
-filter-key matrix. Phase 8.3 deliberately has no dry-run or preview because the
-resource prune commands share no trustworthy native preview contract.
-
-The prune routes remain pre-bootstrap host commands. Tests must prove exact
-argv, inherited stdio with and without force, one streaming execution and zero
-capture/precheck calls, status and spawn-error behavior, root `--stack`/`--file`
-rejection, malformed-session independence, and no DStack config or registry
-creation. Phase 8.3 does not add system prune, global cleanup, stop-all,
-builder/cache prune, system disk-usage inspection, completion, manpages, or
-update/installer behavior.
-
-Phase 8.4 adds the focused host-scoped `system` namespace with only `df` and
-`prune`, plus graceful `container stop`. `system df [--verbose]` is a direct
-inherited-stdio Docker disk-usage view. DStack does not parse it, expose
-`--format`, label it as a prune preview, or add output around it. Docker system
-prune has no native dry-run, so do not recreate v1 `dprunewhat` with a heuristic
-candidate calculation.
-
-`system prune` is one streamed native Docker operation with independent
-long-form `--all`, `--volumes`, repeatable `--filter`, and `--force` options.
-Default Docker scope includes stopped containers, unused networks, dangling
-images, and unused build cache. `--all` broadens image cleanup only;
-`--volumes` includes unused anonymous volumes and must never be described as
-all unused named volumes. The existing `volume prune --all` remains the
-separate explicit named-volume-capable operation. Docker owns confirmation,
-eligibility, output, and child status. Do not pre-enumerate, chain
-resource-specific prune, add a DStack prompt, or add builder/cache commands.
-
-Named `container stop CONTAINER...` streams exact operands directly to Docker
-without a state probe. `container stop --all` first captures only active IDs
-using `docker container ls --quiet --no-trunc`, parses and deduplicates them with
-the shared line-oriented identifier machinery, and stops the snapshot in the
-shared conservative batches of at most 64. Enumeration diagnostics remain
-visible. Empty enumeration returns success with one styled stderr information
-message and no zero-operand stop. Stop batches inherit all streams, run in
-order, and halt at the first numeric or typed process failure. Earlier batches
-are not rolled back, and no retry hides the unavoidable enumerate/stop race.
-Never implement this workflow with a shell, `xargs`, confirmation, force/kill,
-or timeout/signal options.
-
-All Phase 8.4 routes execute before configuration bootstrap and ignore
-registry, discovery, Compose context, and malformed or future `DSTACK_SESSION`.
-Root `--stack` and `--file` remain invalid. The active Docker CLI context and
-environment remain authoritative. Tests must cover exact argv, inherited stdio,
-ordered filters, option independence, status/spawn errors, active-only
-enumeration, LF/CRLF and malformed identifiers, ordered deduplication, batching,
-empty success, first-failure stopping, no shell/prompt, root-option rejection,
-session independence, and absence of config files.
-
-The v1 maintenance audit is final for this phase: `dstopall` maps to `container
-stop --all`; `dclean` and `dcleani` remain mapped to Phase 8.3 container/image
-prune with `--force`; and `dcleanall` maps to `system prune --all`, with
-`--force` only by explicit user choice. `dprunewhat` has no direct replacement.
-Do not port `dstackpurge`: selected-stack `down --volumes` and host-wide system
-prune stay separate commands so one operation cannot unexpectedly cross scope
-or mask the other's failure. Add no v1 aliases, generic purge/cleanup command,
-mixed stack-and-host wrapper, completion, manpage, update, installer, session,
-shell, or Compose-lifecycle work as part of Phase 8.4.
-
-Phase 8.5 adds static shell completion inside the existing Phase 7 shell
-feature. `clap_complete` 4.6's stable AOT API renders Bash, Zsh, Fish, and
-PowerShell definitions from `Cli::command()`; `Cli` remains the only
-command/subcommand/option model. `ShellKind` maps internally to exactly those
-four generators. Because the AOT generators do not consistently omit hidden
-commands, completion generation builds a generic visible-only projection of
-the Clap tree rather than maintaining a second DStack command list. Clap's
-`string` feature permits that projection to retain owned metadata; it does not
-introduce another dependency or command definition.
-
-Hidden `shell __completions SHELL` writes only the generated completion source.
-It and `shell __init SHELL` route at the existing early boundary, before config
-bootstrap, registry/discovery/session parsing, Compose resolution, or any Docker
-process. `__init` directly composes the existing session adapter with the same
-Rust completion renderer; it must never spawn `__completions` recursively.
-Adapter source comes first so optional completion setup cannot erase session
-mutation behavior.
-
-Do not change `manual_loader` or `managed_block` for completion. Both already
-call `__init`, so current managed and canonical manual profiles stay current
-byte-for-byte and automatically receive the new payload after a profile reload.
-No completion sidecar file, package asset, profile schema, migration command,
-or separately persisted status exists. Install/status/uninstall continue to
-own only the marked loader block; an already-loaded wrapper and completion can
-remain in the current shell until reload or restart.
-
-Zsh initialization checks for `compdef` and runs ordinary `compinit` only when
-the standard completion system is absent. Never use security-bypassing compinit
-flags. The wrapper must already exist if completion initialization fails.
-PowerShell keeps the global wrapper and uses the stock Clap native argument
-completer, which is verified through `TabExpansion2` after the function shadows
-the application. Clap's generated `using namespace` directives are expanded
-to fully qualified type names so the completion source can safely follow the
-wrapper in one payload; command candidates still come exclusively from Clap.
-
-Completion is deliberately static. Do not read registry/discovery/session
-state, probe Compose services, query Docker resources or contexts, add a Tab-
-time subprocess, cache, daemon, dynamic-completion framework, or reproduce
-Docker Compose/raw command argv. Manpages and release/installer completion
-assets are outside Phase 8.5.
-
-Rust tests and manual development commands must set
-`DSTACK_CONFIG_DIR` to a temporary directory so they never read or write a
-developer's real v1 or v2 state. The override contains `dstack.conf` and
-`registry.toml`; its `legacy/registry` child remains the isolated v1 migration
-fixture. Automated Rust tests inject a recording process executor and must
-never require a Docker daemon, Docker Desktop, containers, or network pulls.
-Interactive shell probes use null stdio; final Compose and direct Docker
-streaming operations inherit the user's terminal and preserve exact native
-arguments. Captured-process fakes must cover stdout bytes, numeric status,
-spawn errors, the normal null-stdin/captured-stdout/inherited-stderr policy,
-and the silent null-stdin/captured-stdout/null-stderr probe policy. No automated
-test may require a Docker daemon.
-
-The same developer workflows are available through `make fmt-check`,
-`make lint`, `make test`, `make build`, and `make ci` on Unix-like systems.
-
-## Phase 9 release and self-update contract
-
-Phase 9 makes v2 distributable; it does not make v2 the production default.
-The external `kyanjeuring.com/scripts/install-dstack` endpoint, v1 source line,
-legacy registry, and public production recommendation remain final-cutover
-work. Do not tag or publish a release merely to validate this phase.
-
-`dstack self-update [--check]` is an early application-maintenance route. It
-must remain independent from config/registry bootstrap, `DSTACK_SESSION`, stack
-discovery, Compose resolution, Docker, and Docker Compose. Network access occurs
-only for that explicit command. Never add periodic checks, a stamp file,
-telemetry, a daemon, a background task, another updater alias, confirmation,
-privilege escalation, or automatic restart/profile rewriting.
-
-The update domain is split into platform/version mapping, a narrow backend
-trait, command/ownership policy, typed errors, and the production GitHub
-backend. Application tests use a fake backend; ordinary tests must never query
-GitHub or replace a test executable. Production release selection must accept
-only exact stable `v2.X.Y` tags from published `KyanJeuring/dstack` GitHub
-Releases. The updater library's compatible strategy alone is insufficient
-because it can fall back to an incompatible major; DStack explicitly filters
-stable v2 and pins the chosen tag.
-
-The immutable standalone asset contract is:
-
-| OS/architecture | Key | Archive | Binary path |
-|---|---|---|---|
-| Linux x86_64 | `linux-x86_64` | `.tar.gz` | `dstack` |
-| Linux aarch64 | `linux-aarch64` | `.tar.gz` | `dstack` |
-| macOS x86_64 | `macos-x86_64` | `.tar.gz` | `dstack` |
-| macOS aarch64 | `macos-aarch64` | `.tar.gz` | `dstack` |
-| Windows x86_64 | `windows-x86_64` | `.zip` | `dstack.exe` |
-
-Names are exactly `dstack-vVERSION-KEY.EXTENSION`. Asset matching is equality,
-not a fuzzy target substring, so packages, installer scripts, sidecars, and the
-aggregate manifest cannot be selected. `SHA256SUMS` is mandatory for runtime
-updates; its absence or missing selected-asset entry is an error. Keep the
-updater crate's independent GitHub asset-digest verification enabled. A
-checksum, archive, writability, or replacement failure must leave the installed
-binary unchanged as far as the platform updater can guarantee.
-
-Official Debian, RPM, and Arch packages install the package-owned marker
-`/usr/share/dstack-compose/install-method` with value `system-package`.
-Together with `/usr/bin/dstack`, it blocks in-place self-update. Standalone
-archives never contain the marker. The normal `$CARGO_HOME/bin/dstack` or
-`$HOME/.cargo/bin/dstack` path similarly defers to
-`cargo install dstack-compose --locked --force`; arbitrary custom Cargo roots
-are deliberately not guessed. Both ownership classes may still use `--check`.
-
-`install/install.sh` and `install/install.ps1` own only binary delivery. They
-select the exact supported archive, verify its `.sha256` sidecar and payload,
-run staged `dstack --version`, and perform a same-directory staged replacement.
-They support latest stable publication, stable-v2 version pins, destination
-override, and an explicit-version offline dry run. They do not install packages,
-edit PATH/profiles, call `dstack shell install`, touch DStack state, invoke
-Docker, remove/migrate v1, or elevate privileges. A detected v1 installation is
-only warned about and left untouched.
-
-Release builds retain standalone archives plus Debian, RPM, and Arch packages.
-The single assembly job adds stable installer assets and sidecars, requires all
-five standalone archives and every expected sidecar, verifies each sidecar,
-then generates `SHA256SUMS`. Only after those gates may it create a draft GitHub
-Release. Human review/publishing remains intentional. Publication of a matching
-`v2.*` GitHub Release triggers the existing trusted crates.io workflow after
-the tag/Cargo version check; Phase 9 never runs `cargo publish` itself.
-
-Standalone rollback is an explicit older installer version pin, not a
-self-update downgrade flag. `make install` and `make update` remain local
-source-checkout conveniences; the latter means fast-forward Git pull, release
-rebuild, and local reinstall, not production self-update. Final cutover alone
-may change the website endpoint, v1 support/deprecation language, default
-installation docs, or legacy profile/registry migration policy.
+Versions follow semantic versioning. Release tags must match `Cargo.toml`.
+The release workflow must remain draft-first, build all supported native
+archives and Linux packages, attach checksum sidecars plus `SHA256SUMS`, and
+pass independent artifact validation before publication.

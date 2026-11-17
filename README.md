@@ -1,986 +1,308 @@
-<img src="./logo/dstack-logo.png">
+<img src="./logo/dstack-logo.png" alt="DStack">
 
-![CI](https://github.com/kyanjeuring/dstack/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/KyanJeuring/dstack/actions/workflows/ci.yml/badge.svg)
 
-**Docker Compose stack management**
+# DStack
 
-> [!NOTE]
-> The characterized Bash implementation remains the supported DStack v1
-> release. DStack v2 is being developed alongside it in Rust, beginning at
-> package version `2.0.0`. Its Cargo package is `dstack-compose`, while the
-> executable remains `dstack`. The package is not published yet; do not replace
-> an existing v1 installation with the development binary.
+Docker Compose stack management from anywhere.
 
-The in-development v2 foundation provides persistent registry, configuration,
-discovery, terminal-scoped active contexts, context planning, and native Docker
-Compose execution. The process boundary uses exact OS arguments and never
-reconstructs a shell command. Developer-facing commands include:
+DStack v2 is the current supported release. It is implemented in Rust, the
+executable is `dstack`, and its Cargo/system package name is
+`dstack-compose`. DStack v1.11.0 is the final legacy Bash release; v2 is an
+intentionally breaking CLI redesign, not a drop-in replacement.
 
-```text
-dstack config path
-dstack config show
-dstack registry list|show|add|remove
-dstack migrate registry [--dry-run]
-dstack list
-dstack use NAME [--file FILE]...
-dstack unset
-dstack shell install [--shell SHELL] [--profile PATH] [--dry-run]
-dstack shell status [--shell SHELL] [--profile PATH]
-dstack shell uninstall [--shell SHELL] [--profile PATH] [--dry-run]
-dstack self-update
-dstack self-update --check
-dstack [-s NAME] [--file FILE]... context show
-dstack [-s NAME] [--file FILE]... compose [--] [ARGS...]
-dstack [-s NAME] [--file FILE]... up [--remove-orphans] [SERVICE...]
-dstack [-s NAME] [--file FILE]... start|stop|restart|pull [SERVICE...]
-dstack [-s NAME] [--file FILE]... down [--volumes]
-dstack [-s NAME] [--file FILE]... recreate [--volumes]
-dstack [-s NAME] [--file FILE]... update [SERVICE...]
-dstack [-s NAME] [--file FILE]... rebuild [--no-cache] [SERVICE...]
-dstack [-s NAME] [--file FILE]... services
-dstack [-s NAME] [--file FILE]... logs [-f|--follow] [--tail N] [SERVICE...]
-dstack [-s NAME] [--file FILE]... exec SERVICE [-- COMMAND...]
-dstack [-s NAME] [--file FILE]... run SERVICE [-- COMMAND...]
-dstack container list [-a|--all] [-f|--filter FILTER]...
-dstack container ports [CONTAINER [PRIVATE_PORT]]
-dstack container ip CONTAINER
-dstack container ip --all
-dstack container stats [-a|--all] [--no-stream] [CONTAINER...]
-dstack container inspect CONTAINER...
-dstack container inspect --all
-dstack container remove CONTAINER...
-dstack container stop CONTAINER...
-dstack container stop --all
-dstack container prune [--filter FILTER]... [--force]
-dstack image list [-a|--all] [-f|--filter FILTER]...
-dstack image inspect IMAGE...
-dstack image inspect --all
-dstack image remove IMAGE...
-dstack image prune [--all] [--filter FILTER]... [--force]
-dstack volume list [-f|--filter FILTER]...
-dstack volume inspect NAME...
-dstack volume inspect --all
-dstack volume remove NAME...
-dstack volume prune [--all] [--filter FILTER]... [--force]
-dstack network list [-f|--filter FILTER]...
-dstack network inspect NAME...
-dstack network inspect --all
-dstack network remove NAME...
-dstack network prune [--filter FILTER]... [--force]
-dstack system df [--verbose]
-dstack system prune [--all] [--volumes] [--filter FILTER]... [--force]
+## Install
+
+### Linux and macOS
+
+Install the latest stable standalone release from the GitHub Release asset:
+
+```bash
+curl -fsSL \
+  https://github.com/KyanJeuring/dstack/releases/latest/download/install-dstack.sh \
+  | sh
 ```
 
-The first stack, configuration, registry, or migration operation creates
-`~/.config/dstack/dstack.conf` and a versioned empty `registry.toml` when
-absent. Host-scoped Docker utilities do not read or initialize DStack state.
-Set `DSTACK_CONFIG_DIR` to a temporary directory for development and tests; it
-replaces that root completely. These v2 commands are not yet a released user
-interface.
-V2 table output aligns by visible text width and uses restrained color only on
-an interactive terminal; redirected output is plain, and `NO_COLOR` disables
-optional styling.
+The installer verifies the archive's SHA-256 checksum and installs to
+`~/.local/bin` by default. Follow its printed PATH guidance if that directory
+is not already on PATH, then install terminal integration:
 
-Raw `dstack compose` forwards Compose arguments without lifecycle defaults.
-Use the hard `--` boundary when a raw Compose argument is also owned by
-DStack, such as `dstack compose -- --file special.yaml up`. The typed
-`dstack up` command runs `up -d --build`; `update`, `rebuild`, and `recreate`
-are fail-fast multi-step operations. Docker stdin, stdout, and stderr remain
-inherited, and DStack returns Docker's numeric exit status when available.
-
-`dstack start` and `dstack stop` make a best-effort, machine-readable state
-check before running Compose. DStack skips the lifecycle command only when the
-complete requested stack or service set is conclusively already running or
-stopped. The check is replica-aware, ignores unrelated one-off containers, and
-requires existing containers for every explicit service. Missing, mixed,
-unknown, malformed, or failed probe state falls through to the original
-Compose command, which remains authoritative. `up` and all other lifecycle
-commands are unchanged.
-
-`dstack services` lists the services defined by the resolved Compose model by
-running `docker compose ... config --services`; it does not depend on running
-containers. `dstack logs` is non-following by default and shows the last 100
-lines. Use `--follow`/`-f` for streaming and `--tail N` for a non-negative
-line count. Service operands retain their order, and DStack does not insert a
-pager or rewrite Compose log output.
-
-`dstack exec SERVICE` quietly probes `bash`, `sh`, `zsh`, then `ash` and opens
-the first available interactive shell. An explicit command requires the hard
-boundary form `dstack exec SERVICE -- COMMAND...`. Likewise,
-`dstack run SERVICE` uses the configured service/image command, while
-`dstack run SERVICE -- COMMAND...` supplies exact command argv. Typed `run`
-always uses `--rm`. These operations inherit terminal streams; DStack never
-joins, quotes, or evaluates command arguments through a host shell.
-
-The `container`, `image`, `volume`, `network`, and `system` namespaces are
-host-scoped.
-They call the installed `docker` CLI directly and never resolve a DStack
-project, registry entry, Compose file, or `ResolvedContext`. Consequently,
-`--stack` and `--file` are errors for every command in these namespaces.
-Metadata list operations request machine-oriented Docker rows, validate them,
-and render aligned DStack tables. Docker stderr remains inherited. Live stats,
-system disk usage, system prune, explicitly named inspect JSON, one-container
-port lookup, explicit resource removal, and explicitly named container stop
-remain Docker-owned streaming output. `inspect --all` is deliberately
-explicit: it enumerates every resource of that type and emits one JSON array,
-including `[]` when the daemon reports none. Explicit removals never add force,
-stop, disconnect, volume-removal, or prune behavior. No v2 host command invokes
-a shell pipeline, pager, or external table utility.
-
-Resource prune commands also delegate directly to Docker. DStack does not
-pre-enumerate candidates, reproduce Docker's eligibility rules, parse reclaimed
-space, or add a second confirmation. Docker prompts for confirmation by
-default; use the long-form `--force` option only when intentionally skipping
-that native prompt. The default scopes are deliberately resource-specific:
-
-| Command | Default scope |
-|---|---|
-| `dstack container prune` | Stopped containers |
-| `dstack image prune` | Dangling images |
-| `dstack image prune --all` | All unused images |
-| `dstack volume prune` | Unused anonymous local volumes |
-| `dstack volume prune --all` | All unused local volumes, including named volumes |
-| `dstack network prune` | Unused networks |
-
-Only image and volume prune expose `--all`, because Docker defines a distinct
-broader operation for those resources. `--all` and `--force` are independent:
-neither implies the other. All four commands accept repeatable, opaque Docker
-filters and preserve their order; Docker validates the resource-specific
-filter syntax:
-
-```text
-dstack container prune --filter until=24h --filter label=temporary
-dstack image prune --all --filter until=168h --force
-```
-
-Prune inherits stdin, stdout, and stderr. This lets Docker own its confirmation,
-warnings, deleted-resource list, reclaimed-space output, and exit status. DStack
-does not expose short destructive `-a` or `-f` aliases for prune.
-
-### System maintenance and graceful container stop
-
-`dstack system df` streams Docker's standard human-readable daemon disk-usage
-view without parsing, headers, or DStack status messages. Add `--verbose` for
-Docker's detailed view. This is useful before or after maintenance, but it is
-**not a prune preview** and does not claim to show exactly what a later prune
-will delete. Phase 8.4 deliberately exposes neither Docker's `--format` option
-nor a DStack dry-run approximation.
-
-`dstack system prune` delegates one native broad cleanup request directly to
-Docker. DStack does not enumerate candidates, chain resource-specific prune
-commands, or add a second prompt. Docker owns confirmation unless the user
-explicitly supplies long-form `--force`; stdin, stdout, stderr, and Docker's
-numeric status remain native. Repeatable `--filter` values are opaque and stay
-in user order.
-
-| Command | Effect |
-|---|---|
-| `dstack system prune` | Stopped containers, unused networks, dangling images, and unused build cache |
-| `dstack system prune --all` | Additionally broadens image cleanup to all unused images |
-| `dstack system prune --volumes` | Additionally prunes unused anonymous volumes |
-| `dstack volume prune --all` | Separate command for all unused local volumes, including named volumes |
-
-The flags are independent: `--all` does not imply `--volumes` or `--force`, and
-`--volumes` does not imply `--all`. Even `system prune --all --volumes` does
-not include all unused named volumes. System prune always includes Docker's
-unused build-cache cleanup; no separate builder/cache namespace is added.
-
-`dstack container stop web db` becomes the exact native command `docker
-container stop web db`; DStack does not pre-inspect explicit targets or expose
-force, signal, or timeout options. Docker applies each container's configured
-graceful-stop behavior.
-
-`dstack container stop --all` is deliberately host-wide: it stops every
-currently running container visible to the active Docker daemon/context,
-including containers unrelated to DStack. DStack enumerates running container
-IDs with machine-readable Docker output, removes duplicate IDs in first-seen
-order, then streams `docker container stop` in batches of at most 64 targets.
-It does not enumerate already stopped containers, invoke a shell or `xargs`, or
-prompt. If no containers are running it reports that fact on stderr and returns
-success without an empty Docker stop invocation.
-
-Stop-all uses snapshot semantics. Containers can exit, appear, disappear, or
-restart between enumeration and stopping; a container started after the
-snapshot is outside the captured target set. DStack does not retry. Batches run
-in order and stop at the first Docker failure, whose status and diagnostics are
-preserved. Earlier successful batches remain stopped, so a multi-batch host
-mutation cannot be atomic.
-
-Use `container ip --all` for a stable host-wide IPv4 overview. It includes
-stopped containers, shows one row per Docker network membership, and uses `-`
-when a container has no current IPv4 assignment or no network membership:
-
-```text
-$ dstack container ip --all
-CONTAINER  NETWORK           IP
-db         backend           -
-jellyfin   jellyfin_default  172.20.0.4
-isolated   -                 -
-redis      backend           172.21.0.3
-redis      monitoring        172.22.0.5
-```
-
-The existing list and overview semantics stay focused: container and image
-lists already define `--all`, container stats delegates its existing `--all`
-to Docker, and volume/network lists are inherently host-wide. Container ports
-with no operand remains the runtime-wide overview for running containers; it
-does not gain an ambiguous stopped-container `--all` mode.
-
-### V2 terminal sessions and shell integration
-
-V2 keeps persistent profiles and terminal state separate. `dstack registry
-add NAME PATH` stores a reusable profile; `dstack use NAME` selects a resolved
-snapshot for only the current terminal, and `dstack unset` clears only that
-terminal selection. Neither session command adds or removes a registry entry.
-`dstack context show` displays the effective stack, source, project, and
-ordered Compose files; an active terminal selection reports `Source: session`.
-
-A child process cannot change its parent shell. Install v2 terminal integration
-in the detected shell profile, then follow the printed reload instruction:
-
-```text
+```bash
 dstack shell install
 ```
 
-The one installation enables both the thin terminal-session adapter and static
-DStack CLI completion for Bash, Zsh, Fish, and PowerShell. DStack does not
-install a separate completion file. The existing profile loader asks the
-current `dstack` binary for both pieces whenever the profile is loaded.
+Pin the first v2 release through the installer's supported environment
+contract:
 
-DStack uses the active adapter, parent process, platform hints, and finally the
-login-shell setting as evidence. It refuses to edit a profile when detection is
-unknown or ambiguous. Select the target explicitly for nested or unusual shell
-setups:
-
-```text
-dstack shell install --shell bash
-dstack shell install --shell zsh
-dstack shell install --shell fish
-dstack shell install --shell powershell
+```bash
+curl -fsSL \
+  https://github.com/KyanJeuring/dstack/releases/latest/download/install-dstack.sh \
+  | DSTACK_VERSION=v2.0.0 sh
 ```
 
-Use `--profile PATH` for custom dotfile layouts or PowerShell hosts whose
-profile cannot be resolved reliably. `dstack shell install --dry-run` reports
-the selected shell, profile, planned action, and managed block without writing
-anything. Inspect or remove integration with:
+### Windows
+
+Run the published PowerShell installer from a native PowerShell session:
+
+```powershell
+$installer = Join-Path $env:TEMP 'install-dstack.ps1'
+Invoke-WebRequest `
+  -Uri 'https://github.com/KyanJeuring/dstack/releases/latest/download/install-dstack.ps1' `
+  -OutFile $installer
+& $installer
+Remove-Item $installer
+dstack shell install
+```
+
+The installer verifies the archive checksum and installs
+`$HOME\.local\bin\dstack.exe` by default. Add the exact directory it prints to
+PATH first when necessary.
+
+### Packages and archives
+
+Each GitHub Release provides:
+
+- standalone archives for Linux x86_64/ARM64, macOS Intel/Apple Silicon, and
+  Windows x86_64;
+- direct `.deb` packages for amd64 and arm64;
+- direct `.rpm` packages for x86_64 and aarch64;
+- direct Arch Linux packages for x86_64 and aarch64;
+- `SHA256SUMS` plus a checksum sidecar for every asset.
+
+These are release files, not hosted APT, DNF, Homebrew, Chocolatey, Winget, or
+Scoop repositories. The crate package is named `dstack-compose`; its Cargo
+installation command will be documented after version 2.0.0 is visible on
+crates.io.
+
+## Quick start
+
+```bash
+# Discover projects and show registered profiles.
+dstack list
+
+# Register a project explicitly.
+dstack registry add media ~/projects/media
+
+# Select it for this terminal (requires shell integration).
+dstack use media
+
+# Inspect the exact resolved project and Compose files.
+dstack context show
+
+# Start the stack, inspect logs, then clear the terminal selection.
+dstack up
+dstack logs --follow
+dstack unset
+```
+
+Without `--stack` or an active session, stack commands use the exact current
+directory when it contains a configured Compose file. DStack never walks up to
+a parent directory.
+
+## Stacks, discovery, and registry
+
+`dstack list` combines persistent registry profiles with discovered projects.
+Discovery checks direct children of the configured roots; it does not recurse
+arbitrarily. Exact registered names are authoritative, and ambiguous discovered
+names must be resolved by registering a unique name.
+
+```bash
+dstack registry list
+dstack registry show media
+dstack registry add media /srv/media --file compose.yml
+dstack registry remove media
+```
+
+Removing a profile does not touch the project. Repeated `--file` options store
+an ordered multi-file profile.
+
+## Terminal context
+
+`dstack use NAME` selects a resolved snapshot for the current terminal only.
+`dstack unset` clears it. The shell adapter stores this state in the versioned
+`DSTACK_SESSION` environment variable; it does not write a session file or
+change the registry.
+
+Resolution order for stack-scoped commands is:
+
+1. explicit `--stack NAME`;
+2. the current terminal's `DSTACK_SESSION`;
+3. the exact current directory.
+
+Use `dstack context show` to see the effective source, project path, and
+ordered Compose files.
+
+## Compose files and lifecycle
+
+Automatic Compose-file selection checks the configured filenames in order and
+uses the first existing file. Explicit repeated `--file FILE` options replace
+profile/default selection and preserve their order.
+
+Typed lifecycle commands are the preferred interface:
 
 ```text
+dstack up [--remove-orphans] [SERVICE...]
+dstack start|stop|restart|pull [SERVICE...]
+dstack down [--volumes]
+dstack recreate [--volumes]
+dstack update [SERVICE...]
+dstack rebuild [--no-cache] [SERVICE...]
+```
+
+`up` uses detached, build-aware defaults. Multi-step operations are fail-fast,
+and Docker Compose remains authoritative for output and exit status.
+
+For Compose features outside the typed surface, use raw forwarding:
+
+```bash
+dstack compose ps
+dstack --stack media compose config
+dstack compose -- --file special.yaml up
+```
+
+The hard `--` boundary protects raw arguments that look like DStack options.
+DStack forwards exact OS arguments and never reconstructs a shell command.
+
+## Services, logs, exec, and run
+
+```bash
+dstack services
+dstack logs --tail 50 web
+dstack logs --follow web worker
+dstack exec web
+dstack exec web -- env
+dstack run worker
+dstack run app -- sh -c 'echo hello'
+```
+
+Logs show 100 lines by default and do not follow unless requested. With no
+explicit command, `exec` probes common interactive shells. An explicit command
+for `exec` or `run` requires `--`; `run` always uses Compose `--rm`.
+
+## Host Docker commands
+
+The `container`, `image`, `volume`, `network`, and `system` namespaces call the
+Docker CLI directly and do not resolve a DStack project:
+
+```text
+dstack container list|ports|ip|stats|inspect|remove|stop|prune
+dstack image list|inspect|remove|prune
+dstack volume list|inspect|remove|prune
+dstack network list|inspect|remove|prune
+dstack system df|prune
+```
+
+Use each command's `--help` for its typed options. `inspect --all` is explicit,
+and removal commands act only on named resources.
+
+## Maintenance safety
+
+Prune commands delegate eligibility, confirmation, output, and exit status to
+Docker. They do not add `--force` automatically. Use long-form `--force` only
+when intentionally skipping Docker's confirmation.
+
+```bash
+dstack container prune
+dstack image prune --all
+dstack volume prune --all --force
+dstack network prune --filter until=24h
+dstack system df --verbose
+dstack system prune --all --volumes
+```
+
+`dstack container stop --all` is host-wide and stops every currently running
+container visible to the active Docker daemon/context. `dstack system prune`
+also affects Docker data unrelated to registered DStack projects.
+
+## Shell integration and completion
+
+One managed profile block enables both terminal session handling and static
+completion for Bash, Zsh, Fish, or PowerShell:
+
+```bash
+dstack shell install
 dstack shell status
 dstack shell uninstall
 ```
 
-Installation adds or updates exactly one marked DStack block and preserves all
-other profile content. The canonical manual loaders documented below are also
-first-class installations: `dstack shell install` detects them and does not add
-a duplicate managed block. Status distinguishes managed, manual, outdated, and
-duplicate integration.
+Use `--shell bash|zsh|fish|powershell` when automatic detection is ambiguous,
+and `--profile PATH` for a custom profile. `--dry-run` previews profile changes.
+Installation preserves unrelated content; uninstall removes only DStack's
+managed block and never removes a user-authored manual loader.
 
-Users who already installed the current Phase 7.2 managed block or canonical
-manual loader do not need to reinstall or migrate it after upgrading DStack.
-Open a new terminal or reload the existing profile: the unchanged loader calls
-the new binary and receives its current adapter and completion definition.
-
-Uninstall removes only a DStack-managed block. A manually added loader remains
-user-owned and must be removed manually; DStack reports it instead of claiming
-that integration was fully uninstalled. No generic shell completion files are
-searched for or removed. Neither install nor uninstall can reload or remove a
-function or completion registration in the already-running parent shell, so
-open a new terminal or use the command DStack prints. These commands do not
-remove DStack, registry data, or `DSTACK_SESSION`.
-
-For advanced/manual integration, add the loader for the appropriate shell to
-its profile. The same single loader initializes both the session adapter and
-completion. `__init` is a hidden runtime protocol, not a general public
-command:
+## Configuration
 
 ```bash
-# Bash
-eval "$(command dstack shell __init bash)"
-
-# Zsh
-eval "$(command dstack shell __init zsh)"
+dstack config path
+dstack config show
 ```
 
-```fish
-# Fish
-command dstack shell __init fish | source
-```
+The default configuration root is `~/.config/dstack`. Set
+`DSTACK_CONFIG_DIR` to replace it completely, which is useful for isolated
+automation and tests. `dstack.conf` is strict TOML with ordered discovery
+roots and Compose filenames. The default roots are `~/projects`, `~/src`,
+`~/code`, and `/opt/services` on Unix; the default filenames are
+`docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, and `compose.yaml`.
 
-```powershell
-# PowerShell
-& {
-  $dstackApplication = (Get-Command dstack -CommandType Application -ErrorAction Stop).Source
-  Invoke-Expression ((& $dstackApplication shell __init powershell) -join "`n")
-}
-```
+## Self-update and installation ownership
 
-The adapter shadows `dstack`, delegates ordinary commands to the executable,
-and intercepts only `use` and `unset`. Completion attaches to that shell-visible
-`dstack` command and is generated from the same current Clap command model used
-by the CLI. It covers DStack commands, subcommands, options, visible aliases,
-and static values supported by each shell generator. It does not query stack
-names, registry entries, Compose services, or Docker resources, and it does not
-attempt to model arbitrary Docker Compose or command arguments.
-
-Running the executable directly for `use` and `unset` fails with detected
-profile, automatic setup, manual setup, and reload guidance instead of
-pretending it changed the parent environment. The managed loader resolves the
-current DStack application each time the profile loads, so a later binary
-upgrade supplies the current adapter and completion without rewriting the
-profile block or installing another asset.
-
-Older Phase 7 manual loaders using public `dstack shell init` are detected as
-outdated. DStack prints the exact current replacement but does not rewrite
-manually authored profile lines. Duplicate managed/manual loaders are reported
-for manual cleanup rather than normalized automatically.
-
-The active snapshot is exported as one compact, versioned JSON value in
-`DSTACK_SESSION`. It contains the stack name, canonical project path, ordered
-absolute Compose-file paths, and the original registered/discovered activation
-source. It is never written to `dstack.conf`, `registry.toml`, or another
-DStack state file. Independent terminals therefore remain independent; child
-shells naturally inherit exported state.
-
-Stack-scoped commands resolve targets in this order:
-
-1. explicit `--stack NAME` / `-s NAME`;
-2. valid `DSTACK_SESSION` snapshot;
-3. a Compose project in the exact current directory;
-4. a nonzero error.
-
-For an active session, explicit command `--file` values replace the session's
-stored files; otherwise the snapshot's ordered files are used. For an explicit
-stack, explicit files replace registered profile defaults, which in turn
-precede automatic configured-candidate selection. Cwd resolution has no
-profile defaults. A malformed or stale higher-precedence session fails clearly
-and never falls back to cwd. Use `dstack unset` or select the stack again.
-
-The legacy v1 `DSTACK` and `DSTACK_COMPOSE_FILE` variables are not v2 session
-state and are ignored by the Rust runtime. Host-scoped `container`, `image`,
-`volume`, `network`, and `system` commands also ignore `DSTACK_SESSION`
-completely.
-
-Phase 6 migrates the useful v1 host helpers to descriptive v2 commands:
-
-| DStack v1 | DStack v2 development command |
-|---|---|
-| `dps` | `dstack container list` |
-| `dpsa` | `dstack container list --all` |
-| `dpsg foo` | `dstack container list --filter name=foo` |
-| `dport` | `dstack container ports` |
-| `dip CONTAINER` | `dstack container ip CONTAINER` |
-| `dstats` | `dstack container stats` |
-| `dinspect CONTAINER` | `dstack container inspect CONTAINER` |
-| `dimg` | `dstack image list` |
-| `dvol` | `dstack volume list` |
-| `dvolrm NAME` | `dstack volume remove NAME` |
-| `dvolinspect NAME` | `dstack volume inspect NAME` |
-| `dnet` | `dstack network list` |
-| `dnetinspect NAME` | `dstack network inspect NAME` |
-
-The abbreviated v1 names are not Rust command aliases. Phase 8.1 adds only explicit
-`container remove`, `image inspect`, `image remove`, and `network remove`
-operations alongside the existing targeted volume removal; it does not add a
-generic Docker passthrough or resource creation commands.
-
-Phase 8.2 adds only read-only system-wide inspection: `inspect --all` for
-containers, images, volumes, and networks, plus `container ip --all`. A named
-inspect still streams Docker's native response directly, while an all-resource
-inspect produces one DStack-owned JSON array. These commands remain host-scoped
-and do not read stack/session/configuration state.
-
-Phase 8.3 adds native resource-specific prune. Phase 8.4 completes the explicit
-v2 maintenance redesign without preserving abbreviated aliases:
-
-| V1 helper | V2 decision |
-|---|---|
-| `dstopall` | `dstack container stop --all`; structured active-container enumeration, bounded batches, visible diagnostics, and real failure status replace the masked `docker ps -q \| xargs docker stop` pipeline |
-| `dclean` | `dstack container prune --force` (Phase 8.3) |
-| `dcleani` | `dstack image prune --force` (Phase 8.3) |
-| `dcleanall` | `dstack system prune --all`; add `--force` only when intentionally skipping Docker's native confirmation |
-| `dprunewhat` | No direct replacement because Docker system prune has no native dry-run; `dstack system df` is disk usage, not a prune preview |
-| `dstackpurge` | No combined replacement; keep stack destruction and host cleanup separate |
-
-For the broad effects formerly combined by `dstackpurge`, explicitly run:
-
-```text
-dstack -s STACK down --volumes
-dstack system prune
-```
-
-Add `--force` to the second command only when deliberately suppressing Docker's
-prompt. DStack does not automatically cross from one selected Compose stack
-into whole-host cleanup, and each separate operation keeps its own failure
-status. This intentionally replaces v1's combined confirmation and masked
-`down -v`/forced-prune failures. There is no `purge`, `clean`, `stop-all`, or
-other compatibility alias.
-
-Phase 8.5 adds only static, Clap-derived completion through the existing shell
-loader. It adds no dynamic candidate lookup, completion cache or daemon,
-manpages, package completion assets, or Compose/session redesign.
-
-### Phase 9 release preparation (not the production cutover)
-
-Phase 9 makes the v2 binary distributable while the characterized Bash v1
-release remains the supported production default. The production recommendation
-above still uses the external v1 installer. The repository-owned v2 installers
-and their future GitHub Release URLs are prepared release infrastructure; no
-published v2 release exists yet, and those URLs must not be presented as live
-installation commands until final cutover.
-
-The v2 maintenance commands are deliberately explicit:
-
-```text
+```bash
 dstack self-update --check
 dstack self-update
 ```
 
-Both commands query published GitHub Releases from `KyanJeuring/dstack` only.
-They accept exact stable `v2.X.Y` releases, stay within the v2 major line, and
-ignore drafts, prereleases, v1 tags, hypothetical v3 tags, workflow artifacts,
-branches, and crates.io source archives. `--check` is read-only: it reports up
-to date, update available, or no compatible published v2 release without
-downloading an archive or changing files. A successful check exits zero whether
-or not an update exists. Network/API failures remain errors.
+Self-update accepts only compatible stable v2 GitHub releases and verifies
+checksums before replacing a standalone binary. Installation ownership is
+deliberate:
 
-Applying an update selects exactly one platform archive:
+- standalone install: use `dstack self-update`;
+- `.deb`, `.rpm`, or Arch package: update through the system package manager;
+- Cargo-managed install: update through Cargo, not `dstack self-update`.
 
-| Platform | Standalone release asset |
-|---|---|
-| Linux x86_64 | `dstack-vVERSION-linux-x86_64.tar.gz` |
-| Linux ARM64 | `dstack-vVERSION-linux-aarch64.tar.gz` |
-| macOS Intel | `dstack-vVERSION-macos-x86_64.tar.gz` |
-| macOS Apple Silicon | `dstack-vVERSION-macos-aarch64.tar.gz` |
-| Windows x86_64 | `dstack-vVERSION-windows-x86_64.zip` |
+No update check invokes Docker or changes shell profiles.
 
-The updater requires the release's `SHA256SUMS` asset and the exact selected
-archive entry in it. A missing, malformed, or mismatched checksum aborts before
-replacement; GitHub's per-asset digest is also verified when GitHub supplies
-one. The archive must yield `dstack` on Unix or `dstack.exe` on Windows. DStack
-uses the updater library's native in-place replacement and writability preflight,
-never invokes `sudo`, UAC elevation, a cleanup shell, Docker, or Docker Compose,
-and never restarts itself. After a successful replacement it recommends opening
-a new terminal or reloading the shell profile so the static completion definition
-comes from the new binary. No normal DStack command performs an update check;
-there is no timer, state file, daemon, background task, or telemetry.
+## Migrating from v1
 
-Installation ownership determines the supported update path:
-
-| Installation channel | Update owner |
-|---|---|
-| Standalone archive or repository-owned standalone installer | `dstack self-update` is supported |
-| Debian, RPM, or Arch package | Use the same system package manager |
-| `cargo install dstack-compose` | Use `cargo install dstack-compose --locked --force` |
-
-Official Linux packages own
-`/usr/share/dstack-compose/install-method`, so a package-installed
-`/usr/bin/dstack` refuses in-place self-update. A binary in the normal
-`$CARGO_HOME/bin` location (or `$HOME/.cargo/bin`) similarly defers to Cargo.
-Arbitrary historical `cargo install --root` paths cannot be identified without
-an installer database and are therefore outside this narrow guard. Read-only
-`--check` remains available for every installation channel.
-
-The repository now owns two future standalone installer sources:
+DStack v1.11.0 is the final Bash release. Installing the v2 executable does
+not disable the old sourced `dstack()` function, which may continue to shadow
+the binary. Follow [MIGRATING_V1_TO_V2.md](./MIGRATING_V1_TO_V2.md) before
+removing legacy files. The supported registry import is:
 
 ```text
-install/install.sh
-install/install.ps1
+dstack migrate registry --dry-run
+dstack migrate registry
 ```
 
-Release assembly publishes them with stable names `install-dstack.sh` and
-`install-dstack.ps1` plus checksum sidecars. The Unix installer is POSIX
-`/bin/sh` for supported Linux and macOS systems; the PowerShell installer is
-native Windows x86_64. Both default to `$HOME/.local/bin`, support an explicit
-install directory, normalize `2.X.Y` and `v2.X.Y` version pins, verify the
-selected archive's per-asset `.sha256` sidecar, require the exact archive
-payload, run the staged binary's `dstack --version`, and stage a sibling before
-replacement. They clean temporary download/extraction data and do not require
-Docker.
-
-The intended options are:
-
-```text
-install-dstack.sh [--version v2.X.Y] [--install-dir PATH] [--dry-run]
-install-dstack.ps1 [-Version v2.X.Y] [-InstallDir PATH] [-DryRun]
-```
-
-Unix also accepts `DSTACK_VERSION` and `DSTACK_INSTALL_DIR`; PowerShell accepts
-the same environment variables. With an explicit version, `--dry-run`/`-DryRun`
-is fully offline and only reports version, platform, asset, and destination.
-Without a pin, a real install resolves GitHub's latest published stable release.
-The installers never edit PATH, `.bashrc`, `.zshrc`, Fish configuration,
-PowerShell profiles, or DStack configuration/session/registry state. If the
-destination is not currently on PATH, they print the exact directory to add;
-shell integration remains a separate later command:
-
-```text
-dstack shell install
-```
-
-An obvious v1 file at `$HOME/.local/share/dstack/dstack.sh` is reported and
-left unchanged. The installer does not delete v1, edit its source line, migrate
-its registry, or perform final cutover work.
-
-Each eventual v2 draft release retains these parallel channels:
-
-- five standalone archives and the two standalone installers;
-- Debian packages for AMD64 and ARM64;
-- RPM packages for x86_64 and ARM64;
-- Arch packages for x86_64 and ARM64;
-- the `dstack-compose` crate after the GitHub Release is reviewed and published.
-
-The crate command will be `cargo install dstack-compose --locked`, but this is
-future-channel documentation only: the crate is not published yet. Release
-creation stays draft-first for human review, and crates.io trusted publishing
-remains triggered only by publication of a matching `v2.*` GitHub Release.
-
-For standalone rollback, rerun a repository-owned installer with an explicit
-older stable v2 version (for example `--version v2.0.0` or
-`DSTACK_VERSION=v2.0.0`). This deliberate version pin is the rollback path;
-`dstack self-update` only moves forward and has no downgrade/version flag.
-Final cutover will separately decide when to replace or redirect
-`https://kyanjeuring.com/scripts/install-dstack`, switch public recommendations
-to v2, and publish v1 migration/deprecation guidance.
-
-`DStack` is a Bash tool that lets you manage **multiple Docker Compose projects from anywhere in the terminal**.
-
-No more constantly changing directories just to run `docker compose up` or `down`.
-
-Think of it as Docker Desktop-style convenience for Docker Compose, without a GUI.
-
----
-
-## Who is this for?
-
-DStack is for developers and operators who:
-
-- Run multiple Docker Compose projects
-- Work on servers, over SSH, or in homelabs
-- Forget where compose files live
-- Are tired of `cd` + `docker compose` loops
-- Prefer inspectable shell tools over GUIs
-
----
-
-## Features
-
-- Run Docker Compose commands from **any directory**
-- Named stacks (`dcompose myproject`, `ddown website`, etc.)
-- Auto‑discovery of projects in common directories
-- Register Compose projects from **any path**
-- Optional active stack context (`dstack <name>`)
-- Clean, UX‑focused error messages
-- No dependencies beyond Docker, Bash, and standard POSIX tools
-- Server and SSH friendly
-
----
-
-
-## Platform availability
-
-> [!IMPORTANT]
-> Requires **Bash 4+** and a working `git` installation.
-
-- Linux: fully supported  
-- macOS: limited support; requires Bash 4+ and some commands may require GNU utilities 
-- Windows: via **WSL** or **Git Bash**
-
-> [!WARNING]
-> DStack currently only supports Bash.
-> Zsh, Fish, PowerShell, and CMD are not supported.
-
----
-
-## Installation
-
-### One‑line install (recommended)
-
-```bash
-curl -fsSL https://kyanjeuring.com/scripts/install-dstack | bash
-```
-
-### Installing a specific version
-
-```bash
-curl -fsSL https://kyanjeuring.com/scripts/install-dstack | DSTACK_VERSION=vx.y.z bash
-```
-
-This will:
-- Install `dstack` into `~/.local/share/dstack`
-- Automatically source it in your shell`.bashrc`
-
-Restart your shell or run:
-
-```bash
-source ~/.bashrc
-```
-
-### Install via git clone
-
-If you prefer not to use an installer script or pipe remote code into your shell, you can clone the repository directly:
-
-```bash
-git clone https://github.com/kyanjeuring/dstack.git ~/.local/share/dstack
-chmod +x ~/.local/share/dstack/dstack.sh
-```
-
-Then source it into your shell config:
-
-```bash
-echo 'source ~/.local/share/dstack/dstack.sh' >> ~/.bashrc
-```
-
----
-
-## 15-second demo
-
-```bash
-# list stacks (auto-discovered + registered)
-dstack
-
-# compose and start a stack from anywhere
-dcompose myproject
-
-# follow logs without cd'ing
-dlogs myproject
-```
-
----
-
-## Quick start
-
-### List available stacks
-
-```bash
-dstack
-```
-
-This shows:
-- **Registered stacks** (explicitly added)
-- **Auto‑discovered stacks** (common project directories)
-
----
-
-### Run commands without changing directory
-
-```bash
-dcompose myproject
-ddown website
-dlogs backend
-```
-
-No `cd`. No guessing where the project lives.
-
----
-
-## The `dcompose` command
-
-`dcompose` is a thin wrapper around Docker Compose that automatically resolves the correct Compose context.
-
-It behaves like `docker compose`, but lets you run commands from anywhere by resolving:
-
-1. An explicit stack name
-2. The active stack (`dstack <name>`)
-3. The current directory
-
-If a stack directory contains multiple Compose files, you can choose which file to use with a positional filename or standard `-f/--file` flags.
-
-### Default behavior
-
-When no arguments are provided, `dcompose` runs:
-
-```bash
-docker compose [stack] up -d --build --remove-orphans
-```
-
-This provides a fast, consistent "bring everything up" experience.
-
-### Full Docker Compose access
-
-Any arguments passed to `dcompose` are forwarded directly to Docker Compose.
-
-Examples:
-
-```bash
-dcompose up -d
-dcompose mystack restart
-dcompose down -v
-dcompose mystack -f compose.yml -f compose.prod.yaml up -d
-dcompose -f compose.prod.yaml logs -f
-```
-
-This allows advanced workflows without limiting Docker Compose functionality.
-
-DStack also provides a set of convenience commands (`ddown`, `dlogs`, `dexec`, etc.) that wrap common Docker Compose operations with safer defaults and clearer intent.
-
----
-
-## Included commands (highlights)
-
-| Command | Description |
-|------|------------|
-| `dhelp` | List available commands |
-| `dstack` | List available stacks |
-| `dstack add <name> <path>` | Register a stack |
-| `dstackunset <name>` | Unregister a stack |
-| `dcompose [stack] [compose-file]` | Build & start stack |
-| `ddown [stack]` | Stop & remove containers |
-| `dlogs [stack]` | Follow logs |
-| `dexec [stack] <service>` | Exec into container |
-
-(Plus many more helpers for logs, rebuilds, cleanup, networking.)
-
-All commands can also be run within a project without specifying the current stack name.
-
-Example:
-```bash
-cd /path/to/project
-dcompose
-dlogs
-```
-
----
-
-## Auto-discovery locations
-
-DStack automatically discovers Docker Compose projects in common development and server locations, so you don't have to manually register every stack
-
-By default, DStack scans:
-
-- `~/projects`
-- `~/src`
-- `~/code`
-- `/opt/services`
-- `C:/Users/<you>/projects (Windows / Git Bash)`
-- `C:/Users/<you>/src`
-- `C:/Users/<you>/code`
-
-Any directory up to one level deep that contains a supported Docker Compose file is treated as a stack
-(for example `media/jellyfin/`).
-
-These locations were chosen because they are widely used across Linux, macOS, and WSL environments
-
-Discovery is limited to shallow nesting (one level below each base directory) to keep behavior fast and predictable.
-
-> [!IMPORTANT]
-> When stacks are nested, DStack displays their relative path to avoid name collisions.
-
----
-
-## Register external Compose projects
-
-You can register any directory containing a supported Docker Compose file:
-
-Outside a project
-```bash
-dstack add myproject /path/to/project
-```
-
-Inside a project:
-```bash
-cd /path/to/project
-dstack add myproject .
-```
-
-After that:
-
-```bash
-dcompose myproject
-dlogs myproject
-```
-
-This is especially useful for:
-- Monorepos
-- External drives
-- Non‑standard directory layouts
-
----
-
-## How stack resolution works
-
-When you run a command, `dstack` resolves the Compose context in this order:
-
-1. Explicit stack name (`dcompose myproject`)
-2. Active stack (`dstack myproject`)
-3. Local Docker Compose file in the current directory
-
-DStack will use the first supported Compose file it finds by default, in a deterministic order.
-
-When more than one Compose file is present, choose one with `dcompose <stack> <compose-file>`, `dcompose <stack> -f <compose-file>`, or combine multiple files with repeated `-f` flags.
-
-If no context is found, `dstack` tells you exactly what to do.
-
----
-
-## Docker Compose file support
-
-DStack supports the standard Docker Compose filenames:
-
-- `docker-compose.yml`
-- `docker-compose.yaml`
-- `compose.yml`
-- `compose.yaml`
-- Any additional file in the stack directory matching `*compose*.yml` or `*compose*.yaml`
-
-When multiple files are present, DStack still selects the first matching file by default to keep existing workflows predictable.
-
-To pick a different file, pass a filename or `-f/--file` flags to `dcompose`. Multiple files can be combined in the same command, matching Docker Compose's native behavior.
-
-### Customizing Compose filenames (advanced)
-
-By default, DStack looks for the standard Docker Compose filenames mentioned above.
-
-Advanced users can override this behavior by setting the `DSTACK_COMPOSE_FILES` environment variable.
-
-Example:
-
-```bash
-export DSTACK_COMPOSE_FILES="docker-compose.yml compose.yml"
-```
-
-This allows full control over which Compose files DStack considers during stack resolution.
-
-> [!IMPORTANT]
-> This is an advanced feature.
-> Overriding Compose filenames can make stack discovery less predictable and is not recommended for most users.
-
----
-
-## Customizing discovery locations (advanced)
-
-By default, DStack auto-discovers Docker Compose projects in a small set of common directories, such as:
-- `~/projects`
-- `C:/Users/<you>/projects (Windows / Git Bash)`
-
-### Override discovery paths (recommended)
-
-Advanced users can override the discovery locations without editing the script by setting the `DSTACK_BASES` environment variable.
-
-Example:
-
-
-Add this to your shell config `.bashrc`, to make it permanent and reload the shell:
-```bash
-export DSTACK_BASES="/your/custom/path1 /your/custom/path2"
-```
-
-DStack will then use only these paths for auto-discovery.
-
-### Editing the script (not recommended)
-
-You can edit the discovery paths directly in the script, but this is discouraged, as it makes updating DStack harder and can lead to merge conflicts.
-
-If you do edit the script, restart your shell or reload your configuration afterward.
-
-This approach keeps DStack simple while still giving power users full control over their environment.
-
-> [!IMPORTANT]
-> Custom discovery paths must not contain spaces.
-
----
-
-## Updating
-
-Updating DStack follows the same method used for installation.
-
-- If you installed via the installer, re-run the installer.
-- If you installed via git clone, pull the latest changes.
-- If you installed manually, repeat the manual install steps.
-
-After updating, restart your shell or reload your config if needed.
-
----
+The historical [v1.11.0 release](https://github.com/KyanJeuring/dstack/releases/tag/v1.11.0)
+remains available for migration and rollback reference.
+
+## Platform support
+
+DStack v2 supports native Linux, macOS, and Windows builds. Shell integration
+and completion support Bash, Zsh, Fish, and PowerShell. WSL and Git Bash may be
+useful compatibility environments, but native Windows does not require them.
+Docker CLI with Compose v2 is required for Docker-facing commands.
 
 ## Uninstall
 
-```bash
-rm -rf ~/.local/share/dstack
-```
-
-Then remove the `dstack` source line from your shell config.
-
----
-
-## Testing
-
-DStack uses a dependency-free Bash characterization-test harness. The suite
-validates its own infrastructure and records current DStack behavior in
-isolated child shells. Docker commands are handled by a guarded fake executable.
-
-Run the complete cross-platform, non-interactive characterization suite from
-the repository root:
+First remove only the managed shell integration:
 
 ```bash
-bash tests/characterization/run.sh
+dstack shell uninstall
 ```
 
-Run only the test-infrastructure self-tests:
+Then remove the binary through the channel that installed it: delete the
+standalone `dstack`/`dstack.exe`, uninstall `dstack-compose` with the system
+package manager, or use `cargo uninstall dstack-compose`. Configuration and
+registry data are retained unless you explicitly choose to remove them.
+
+## Development
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). The main local quality gate is:
 
 ```bash
-bash tests/characterization/run.sh harness
+make ci
 ```
 
-Run only the DStack loading and shell-state characterization cases:
-
-```bash
-bash tests/characterization/run.sh load
-```
-
-Run the Linux interactive/TTY tier (requires Python 3 with Unix `pty` support):
-
-```bash
-bash tests/characterization/run.sh interactive
-```
-
-Run one case by its TAP name:
-
-```bash
-bash tests/characterization/run.sh case harness::fake_docker_applies_sequential_responses
-```
-
-Failed case directories are normally removed. Preserve a failed case's capture
-files for debugging with:
-
-```bash
-bash tests/characterization/run.sh --debug case <case-name>
-```
-
-These tests exist so future characterization results can be trusted before
-DStack is refactored. Every case receives a temporary `HOME`, project tree,
-registry location, Docker configuration, and controlled `PATH`. Docker calls
-go to a guarded fake executable that records exact argument boundaries and
-configured responses. A fail-closed fallback prevents the suite from silently
-using a real Docker CLI, so no Docker daemon is required.
-
-The in-progress Rust v2 implementation has a separate native test suite. Run
-its formatting, lint, and test gates with:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --all-features --locked
-```
-
-V2 registry tests use `DSTACK_CONFIG_DIR` to isolate all persistent state.
-The current v1 runtime and its real registry are never used by those tests.
-
----
-
-## Contributing
-Contributions are welcome!
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a PR.
-
----
-
-## Support
-
-If you found this project useful and would like to support my work:
-
-[https://buymeacoffee.com/kyanjeuring](https://buymeacoffee.com/kyanjeuring)
-
-## License
-
-MIT License
-
----
+Release CI additionally validates native Linux, macOS, and Windows builds,
+standalone installers, packages, checksums, and draft-first release assets.

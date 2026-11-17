@@ -1,39 +1,58 @@
-## What's Changed
+# DStack v2.0.0
 
-<!-- Summarize the main user-facing changes in this release. -->
+DStack v2.0.0 makes the Rust implementation the supported production DStack.
+This is an intentionally breaking CLI redesign, not a drop-in-compatible
+replacement for the v1 Bash functions.
 
-## Details
+## Highlights
 
-### Added
+- Native Rust executable for Linux, macOS, and Windows.
+- Persistent stack registry plus deterministic project discovery.
+- Terminal-local context through `DSTACK_SESSION`, `dstack use`, and
+  `dstack unset`.
+- Managed Bash, Zsh, Fish, and PowerShell integration with completion.
+- Typed Compose lifecycle, services, logs, exec, and removable one-off run
+  workflows, plus exact raw Compose forwarding.
+- Host-scoped container, image, volume, network, disk-usage, prune, and
+  graceful stop commands with explicit destructive scope.
+- Checksum-verified standalone self-update for compatible stable v2 releases.
 
-<!-- New features or functionality. Remove this section if not applicable. -->
+## Breaking migration
 
-### Changed
+DStack v1.11.0 is the final legacy Bash release. Installing v2 does not remove
+v1, and a sourced v1 `dstack()` function may shadow the new executable.
 
-<!-- Changes to existing functionality. Remove this section if not applicable. -->
+Follow the complete
+[v1-to-v2 migration guide](https://github.com/KyanJeuring/dstack/blob/v2.0.0/MIGRATING_V1_TO_V2.md)
+before removing legacy files. The supported registry import is:
 
-### Fixed
+```text
+dstack migrate registry --dry-run
+dstack migrate registry
+```
 
-<!-- Bug fixes. Remove this section if not applicable. -->
+Old helper names are not retained as compatibility aliases. The migration
+guide maps common workflows, explains Compose/session changes, and documents
+rollback.
 
-## Why this matters
+## Installation and release assets
 
-<!-- Explain the impact of these changes and why they were made. -->
+This release contains five standalone archives:
 
-<!--
-Before publishing:
-- Remove any empty sections.
-- Update relevant documentation.
-- Verify the tag and release version match Cargo.toml.
-- Verify all five standalone archives exist.
-- Verify every standalone and package checksum sidecar.
-- Verify SHA256SUMS exists and covers every attached artifact.
-- Verify install-dstack.sh and install-dstack.ps1 exist.
-- Verify both installer checksum sidecars.
-- Smoke the standalone installer on supported native platforms.
-- Verify the self-update release contract (stable v2 tag, exact asset names,
-  SHA256SUMS, archive binary path) is satisfied.
-- Verify rollback/version-pinning instructions are current.
-- Confirm whether v1 remains the production default; Phase 9 alone must not
-  perform the v2 cutover.
--->
+- Linux x86_64 and ARM64
+- macOS Intel and Apple Silicon
+- Windows x86_64
+
+It also includes stable Unix and PowerShell installer assets, direct `.deb`,
+`.rpm`, and Arch Linux packages for both Linux architectures, checksum
+sidecars for every asset, and the aggregate `SHA256SUMS` manifest.
+
+Standalone installations can use `dstack self-update`; system-package and
+Cargo-managed installations remain owned by their respective package manager.
+
+## Safety and integrity
+
+Installers and self-update use HTTPS release downloads and mandatory SHA-256
+verification. Installers do not edit shell profiles, invoke Docker, or delete
+legacy v1 files. Run `dstack shell install` explicitly after binary
+installation.
