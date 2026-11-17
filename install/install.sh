@@ -207,7 +207,7 @@ printf 'After dstack is on PATH, run: dstack shell install\n'
 if [ -n "${HOME-}" ] && [ -f "$HOME/.local/share/dstack/dstack.sh" ]; then
   printf 'DStack v2 was installed to %s.\n' "$destination"
   printf 'The legacy v1 Bash integration may still shadow the v2 binary.\n'
-  printf 'Follow MIGRATING_V1_TO_V2.md before expecting `dstack` to invoke v2:\n'
+  printf 'Follow MIGRATING_V1_TO_V2.md before expecting dstack to invoke v2:\n'
   printf '  https://github.com/%s/blob/main/MIGRATING_V1_TO_V2.md\n' "$repository"
   printf 'Preview registry migration with the installed v2 executable:\n'
   printf '  "%s" migrate registry --dry-run\n' "$destination"
