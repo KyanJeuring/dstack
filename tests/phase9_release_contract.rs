@@ -79,9 +79,8 @@ fn updater_configuration_keeps_mandatory_integrity_and_unattended_gates() {
 }
 
 #[test]
-fn production_readme_and_release_notes_present_v2_as_current() {
+fn production_readme_presents_v2_as_current() {
     let readme = source("README.md");
-    let notes = source(".github/RELEASE_TEMPLATE.md");
 
     assert!(readme.contains("DStack v2 is the current supported release"));
     assert!(readme.contains("DStack v1.11.0 is the final legacy Bash release"));
@@ -90,10 +89,33 @@ fn production_readme_and_release_notes_present_v2_as_current() {
     assert!(!readme.contains("v1 is the supported production release"));
     assert!(!readme.contains("v2 is in development"));
     assert!(!readme.contains("do not replace v1"));
+}
 
-    assert!(notes.contains("intentionally breaking CLI redesign"));
-    assert!(notes.contains("MIGRATING_V1_TO_V2.md"));
-    assert!(!notes.contains("<!--"));
+#[test]
+fn release_template_remains_generic_and_reusable() {
+    let template = source(".github/RELEASE_TEMPLATE.md");
+
+    for required in [
+        "## What's Changed",
+        "## Details",
+        "### Added",
+        "### Changed",
+        "### Fixed",
+        "## Why this matters",
+        "Before publishing:",
+    ] {
+        assert!(
+            template.contains(required),
+            "release template omitted reusable section {required}"
+        );
+    }
+
+    for release_specific in ["# DStack v2.0.0", "DStack v2.0.0 makes"] {
+        assert!(
+            !template.contains(release_specific),
+            "release template contains release-specific text: {release_specific}"
+        );
+    }
 }
 
 #[test]
