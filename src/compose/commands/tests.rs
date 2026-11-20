@@ -135,8 +135,22 @@ fn pull_and_update_apply_service_operands_to_each_relevant_step() {
         assert_requests(&executor, std::slice::from_ref(&pull_expected));
 
         let executor = RecordingExecutor::default();
-        update::run(&context(), os(&services), &executor).unwrap();
+        update::run(&context(), os(&services), false, &executor).unwrap();
         let mut up_expected = vec!["up", "-d"];
+        up_expected.extend(services);
+        assert_requests(&executor, &[pull_expected, up_expected]);
+    }
+}
+
+#[test]
+fn update_passes_remove_orphans_only_to_up_before_preserved_services() {
+    for services in [vec![], vec!["php", "nginx", "worker"]] {
+        let executor = RecordingExecutor::default();
+        update::run(&context(), os(&services), true, &executor).unwrap();
+
+        let mut pull_expected = vec!["pull"];
+        pull_expected.extend(services.iter().copied());
+        let mut up_expected = vec!["up", "-d", "--remove-orphans"];
         up_expected.extend(services);
         assert_requests(&executor, &[pull_expected, up_expected]);
     }
@@ -173,7 +187,7 @@ fn multi_step_operations_stop_at_first_failure_and_return_first_status() {
         executor.push_status(17);
         let outcome = match operation {
             "recreate" => recreate::run(&context(), false, &executor),
-            "update" => update::run(&context(), os(&["php"]), &executor),
+            "update" => update::run(&context(), os(&["php"]), true, &executor),
             "rebuild" => rebuild::run(&context(), os(&["php"]), false, &executor),
             _ => unreachable!(),
         }
@@ -196,7 +210,7 @@ fn multi_step_operations_return_the_second_failure_status() {
         executor.push_status(23);
         let outcome = match operation {
             "recreate" => recreate::run(&context(), false, &executor),
-            "update" => update::run(&context(), Vec::new(), &executor),
+            "update" => update::run(&context(), Vec::new(), true, &executor),
             "rebuild" => rebuild::run(&context(), Vec::new(), false, &executor),
             _ => unreachable!(),
         }

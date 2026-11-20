@@ -234,6 +234,85 @@ fn typed_operations_accept_target_options_before_or_after_the_command() {
 }
 
 #[test]
+fn update_parses_optional_orphan_cleanup_services_and_flexible_targets() {
+    let Some(Command::Update(arguments)) =
+        Cli::try_parse_from(["dstack", "update", "--remove-orphans"])
+            .unwrap()
+            .command
+    else {
+        panic!("update command should parse");
+    };
+    assert!(arguments.remove_orphans);
+    assert!(arguments.services.is_empty());
+
+    for argv in [
+        vec![
+            "dstack",
+            "-s",
+            "jellyfin",
+            "--file",
+            "compose.yaml",
+            "update",
+            "--remove-orphans",
+            "php",
+            "nginx",
+            "--file",
+            "compose.prod.yaml",
+        ],
+        vec![
+            "dstack",
+            "--file",
+            "compose.yaml",
+            "update",
+            "--remove-orphans",
+            "php",
+            "nginx",
+            "--file",
+            "compose.prod.yaml",
+            "-s",
+            "jellyfin",
+        ],
+    ] {
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let root_stack = cli.stack;
+        let root_files = cli.files;
+        let Some(Command::Update(arguments)) = cli.command else {
+            panic!("update command should parse");
+        };
+        assert!(arguments.remove_orphans);
+        assert_eq!(
+            root_stack.as_deref().or(arguments.target.stack.as_deref()),
+            Some("jellyfin")
+        );
+        assert_eq!(
+            [root_files, arguments.target.files].concat(),
+            [
+                PathBuf::from("compose.yaml"),
+                PathBuf::from("compose.prod.yaml")
+            ]
+        );
+        assert_eq!(
+            arguments.services,
+            ["php", "nginx"].map(std::ffi::OsString::from)
+        );
+    }
+}
+
+#[test]
+fn update_help_documents_only_the_long_orphan_cleanup_flag() {
+    let mut command = Cli::command();
+    let update = command
+        .find_subcommand_mut("update")
+        .expect("update command should exist");
+    let mut help = Vec::new();
+    update.write_long_help(&mut help).unwrap();
+    let help = String::from_utf8(help).unwrap();
+    assert!(help.contains("--remove-orphans"));
+    assert!(!help.contains("-r,"));
+    assert!(!help.contains("-o,"));
+}
+
+#[test]
 fn service_operands_are_never_guessed_as_stack_or_command_names() {
     let cli = Cli::try_parse_from([
         "dstack",

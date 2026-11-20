@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     cli::{
         Command, ComposeArgs, DownArgs, ExecArgs, LogsArgs, RebuildArgs, RecreateArgs, RunArgs,
-        ServicesArgs, ServicesCommandArgs, TargetOptions, UpArgs,
+        ServicesArgs, ServicesCommandArgs, TargetOptions, UpArgs, UpdateArgs,
     },
     compose::commands::{
         down, exec, logs, pull, raw, rebuild, recreate, restart, run as compose_run, services,
@@ -29,7 +29,7 @@ pub(crate) enum Request {
     Down(DownArgs),
     Recreate(RecreateArgs),
     Pull(ServicesArgs),
-    Update(ServicesArgs),
+    Update(UpdateArgs),
     Rebuild(RebuildArgs),
     Services(ServicesCommandArgs),
     Logs(LogsArgs),
@@ -133,7 +133,13 @@ pub(crate) fn run(
             run_services(arguments, root_stack, root_files, &environment, pull::run)
         }
         Request::Update(arguments) => {
-            run_services(arguments, root_stack, root_files, &environment, update::run)
+            let context = resolve(&environment, root_stack, root_files, arguments.target)?;
+            update::run(
+                &context,
+                arguments.services,
+                arguments.remove_orphans,
+                environment.executor,
+            )
         }
         Request::Rebuild(arguments) => {
             let context = resolve(&environment, root_stack, root_files, arguments.target)?;

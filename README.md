@@ -145,12 +145,16 @@ dstack up [--remove-orphans] [SERVICE...]
 dstack start|stop|restart|pull [SERVICE...]
 dstack down [--volumes]
 dstack recreate [--volumes]
-dstack update [SERVICE...]
+dstack update [--remove-orphans] [SERVICE...]
 dstack rebuild [--no-cache] [SERVICE...]
 ```
 
 `up` uses detached, build-aware defaults. Multi-step operations are fail-fast,
 and Docker Compose remains authoritative for output and exit status.
+`update` pulls the requested service images, then runs Compose `up -d`; Compose
+recreates services whose image or configuration changed. `--remove-orphans`
+also removes project containers for services no longer defined by the current
+Compose model. It does not prune images or unrelated host resources.
 
 For Compose features outside the typed surface, use raw forwarding:
 

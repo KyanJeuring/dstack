@@ -141,6 +141,7 @@ snapshot, and `dstack unset` does not remove the profile.
 | `dstart` | `dstack start` |
 | `dstop` | `dstack stop` |
 | `ddown` | `dstack down` |
+| `dupdate` | `dstack update` |
 | `dlogs` | `dstack logs` |
 | `dexec` | `dstack exec` |
 | `drun` | `dstack run` |
@@ -151,6 +152,11 @@ snapshot, and `dstack unset` does not remove the profile.
 | `dcleani` | `dstack image prune --force` |
 | `dcleanall` | `dstack system prune --all`; add `--force` only intentionally |
 | `dstopall` | `dstack container stop --all` |
+
+`dstack update` pulls images and runs Compose `up -d`. Add
+`--remove-orphans` only when you intentionally want that `up` step to remove
+Compose-project containers for services no longer defined by the current
+Compose model.
 
 V2 deliberately does not replace the mixed stack-and-system behavior of
 `dstackpurge`. Run explicit stack teardown and host maintenance as separate

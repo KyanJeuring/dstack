@@ -32,7 +32,9 @@ pub use image::{
     ImageArgs, ImageCommand, ImageInspectArgs, ImageListArgs, ImagePruneArgs, ImageRemoveArgs,
 };
 pub use inspect::{LogsArgs, ServicesCommandArgs};
-pub use lifecycle::{DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs};
+pub use lifecycle::{
+    DownArgs, RebuildArgs, RecreateArgs, ServicesArgs, TargetOptions, UpArgs, UpdateArgs,
+};
 pub use migration::{MigrationArgs, MigrationCommand};
 pub use network::{
     NetworkArgs, NetworkCommand, NetworkInspectArgs, NetworkListArgs, NetworkPruneArgs,
@@ -99,7 +101,7 @@ pub enum Command {
     /// Pull service images.
     Pull(ServicesArgs),
     /// Pull images and start updated services.
-    Update(ServicesArgs),
+    Update(UpdateArgs),
     /// Build images and start rebuilt services.
     Rebuild(RebuildArgs),
     /// List services defined by the resolved Compose model.

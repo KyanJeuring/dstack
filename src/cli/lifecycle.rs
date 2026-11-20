@@ -38,6 +38,20 @@ pub struct UpArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct UpdateArgs {
+    #[command(flatten)]
+    pub target: TargetOptions,
+
+    /// Remove containers for services no longer defined by the Compose files.
+    #[arg(long)]
+    pub remove_orphans: bool,
+
+    /// Limit the update to these Compose services.
+    #[arg(value_name = "SERVICE")]
+    pub services: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
 pub struct DownArgs {
     #[command(flatten)]
     pub target: TargetOptions,
