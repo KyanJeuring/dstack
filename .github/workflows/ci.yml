@@ -182,10 +182,6 @@ jobs:
 
   rust-native:
     name: Rust native (${{ matrix.os }})
-    needs:
-      - lint-and-test
-      - interactive-characterization
-      - rust-quality
     runs-on: ${{ matrix.os }}
 
     strategy:
